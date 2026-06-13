@@ -70,6 +70,34 @@ regularize hard, prefer aggregated features over raw 22×50 input.
 - Name matching FM↔lineups (diacritics, "J. Smith" forms) → norm() + dob + club context; manual alias table.
 - Only ~1140 matches for POC → NN may not beat XGBoost; plan to extend leagues/years later (hence 20-year source hunt).
 
+## 5b. Multi-league + national-team expansion (2026-06-13)
+
+Goal expanded: collect as many leagues as possible by global rank, 6 seasons (2020-21..2025-26),
+plus national teams; flag unmatched names for later resolution.
+
+Key design decisions:
+- **Season → FM database**: each season maps to its own fminside db (FM21=db1 … FM26=db7), one
+  grade snapshot per season. `leagues.SEASON_DB`. build_dataset now joins a match to *its season's*
+  FM database (not "latest snapshot before match date", which broke because FM26's snapshot date is
+  mid-season-2026, after most 2025-26 matches).
+- **Cross-source club identity via score-linking**: football-data abbreviates club names ("Ath
+  Madrid"), ESPN/understat use full names → naive club-name matching fragments identity. `match_link.py`
+  aligns foreign matches to football-data `match` rows by (competition, date±2d, exact score), with
+  club-name token similarity only as a tiebreaker. xG re-match: 10,732 linked, 1 miss (was ~3,600 misses
+  with name matching). ESPN lineups inherit football-data club identity the same way.
+- **Registry-driven** (`leagues.py`): each league carries fminside league string (verified live) +
+  nationality collision-filter + ESPN code + football-data code + understat name. 8 leagues enabled
+  (EPL, LaLiga, Serie A, Bundesliga, Ligue 1, Championship, Eredivisie, Primeira Liga); ranks 9-15
+  staged pending fminside-string verification.
+- **Unmatched names**: `unmatched_name` table flags lineup players that don't join to an FM snapshot
+  (recorded in build_dataset), for later manual/auto resolution.
+- **National teams** (`load_national_espn.py`): ESPN is primary (no football-data internationals);
+  creates national-team clubs, tags match_kind='national', maps each match to its football season so
+  players join to that season's FM db by name. Covers WC/Euro/Nations League/Copa/qualifiers/friendlies.
+
+Loaded so far: 17,717 league matches (8 leagues × 6 seasons), xG for top-5 (10,732 matches).
+ESPN lineups + fminside grades scraping in background.
+
 ## 6. Status log
 
 - 2026-06-12 21:47: project start; schema + db layer + fetch util done; 1140 matches loaded; 5 agents launched.

@@ -19,15 +19,43 @@ ATTR_GROUPS = ("technical", "mental", "physical", "set_pieces", "goalkeeping", "
 
 
 def load_snapshots(con):
-    """player_id -> sorted list of (snapshot_date, snapshot_id, source_name)."""
+    """player_id -> sorted list of (date, snapshot_id, source_name, ca, pa, fm_version_id)."""
     snaps = defaultdict(list)
     for r in con.execute(
-            "SELECT ps.player_id, ps.snapshot_date, ps.snapshot_id, s.name, ps.ca, ps.pa "
+            "SELECT ps.player_id, ps.snapshot_date, ps.snapshot_id, s.name, ps.ca, ps.pa, ps.fm_version_id "
             "FROM player_snapshot ps JOIN source s USING(source_id)"):
-        snaps[r[0]].append((r[1], r[2], r[3], r[4], r[5]))
+        snaps[r[0]].append((r[1], r[2], r[3], r[4], r[5], r[6]))
     for v in snaps.values():
         v.sort()
     return snaps
+
+
+def season_fmv(con):
+    """season label -> fm_version_id for that season's FM database (per leagues.SEASON_DB)."""
+    import leagues as L
+    out = {}
+    for label, (_dbid, game, db_version, _date) in L.SEASON_DB.items():
+        row = con.execute(
+            "SELECT fm_version_id FROM fm_version WHERE game=? AND db_version IS ?",
+            (game, db_version)).fetchone()
+        if row:
+            out[label] = row[0]
+    return out
+
+
+def pick_snapshot(snaps_for_player, target_fmv, season_end):
+    """Prefer the snapshot from this season's FM database; else the latest snapshot on/before
+    the season end; else the earliest available (so a player only graded in later editions
+    still resolves). Returns (date, sid, src, ca, pa, fmv) or None."""
+    if not snaps_for_player:
+        return None
+    for snap in snaps_for_player:
+        if snap[5] == target_fmv:
+            return snap
+    before = [s for s in snaps_for_player if s[0] <= season_end]
+    if before:
+        return before[-1]
+    return snaps_for_player[0]
 
 
 def load_attrs(con):
@@ -149,28 +177,40 @@ def elo_and_form(matches):
     return out
 
 
+SEASON_END = {"2020-21": "2021-06-30", "2021-22": "2022-06-30", "2022-23": "2023-06-30",
+              "2023-24": "2024-06-30", "2024-25": "2025-06-30", "2025-26": "2026-06-30"}
+
+
 def main():
     con = db.connect()
+    record_unmatched = "--no-flag" not in sys.argv
     snaps = load_snapshots(con)
     attrs = load_attrs(con)
     idx, has_snap = name_index(con)
     build_fallback(idx, con)
-    print(f"snapshot players: {len(snaps)}, name index: {len(idx)}")
+    sfmv = season_fmv(con)
+    print(f"snapshot players: {len(snaps)}, name index: {len(idx)}, season->fmv: {sfmv}")
 
     matches = con.execute(
-        "SELECT match_id, match_date, home_club_id, away_club_id, home_goals, away_goals "
-        "FROM match ORDER BY match_date").fetchall()
-    ctx = elo_and_form([tuple(m) for m in matches])
+        """SELECT m.match_id, m.match_date, m.home_club_id, m.away_club_id, m.home_goals,
+                  m.away_goals, se.label, COALESCE(co.name,'?')
+           FROM match m JOIN season se ON se.season_id=m.season_id
+           LEFT JOIN competition co ON co.competition_id=m.competition_id
+           ORDER BY m.match_date""").fetchall()
+    ctx = elo_and_form([(r[0], r[1], r[2], r[3], r[4], r[5]) for r in matches])
 
     pname = {r[0]: r[1] for r in con.execute("SELECT player_id, norm_name FROM player")}
-    lineups = defaultdict(list)  # (match_id, club_id) -> [(player_id, position)]
+    cname = {r[0]: r[1] for r in con.execute("SELECT club_id, name FROM club")}
+    lineups = defaultdict(list)
     for r in con.execute("SELECT match_id, player_id, club_id, position FROM match_player WHERE started=1"):
         lineups[(r[0], r[2])].append((r[1], r[3]))
 
     rows, total_starters, matched_starters = [], 0, 0
-    for m in matches:
-        mid, date, hcid, acid, hg, ag = m
-        row = {"match_id": mid, "date": date, "home_goals": hg, "away_goals": ag,
+    for mid, date, hcid, acid, hg, ag, season, comp in matches:
+        target_fmv = sfmv.get(season)
+        season_end = SEASON_END.get(season, date)
+        row = {"match_id": mid, "date": date, "season": season, "competition": comp,
+               "home_goals": hg, "away_goals": ag,
                "result": "H" if hg > ag else ("A" if ag > hg else "D"), **ctx[mid]}
         mrow = con.execute("SELECT b365h, b365d, b365a, xg_home, xg_away FROM match WHERE match_id=?",
                            (mid,)).fetchone()
@@ -178,20 +218,21 @@ def main():
         ok = True
         for side, cid in (("home", hcid), ("away", acid)):
             xi = lineups.get((mid, cid), [])
-            grp_vals = defaultdict(list)   # (pos_group, category) -> values
+            grp_vals = defaultdict(list)
             cas, pas = [], []
             n_matched = 0
             for pid, pos in xi:
                 total_starters += 1
                 rpid = resolve(pid, pname.get(pid, ""), cid, has_snap, idx)
-                if rpid is None:
-                    continue
-                snap = latest_before(snaps.get(rpid, []), date)
+                snap = pick_snapshot(snaps.get(rpid, []), target_fmv, season_end) if rpid else None
                 if snap is None:
+                    if record_unmatched:
+                        db.record_unmatched(con, "build-dataset", pname.get(pid, str(pid)),
+                                            club=cname.get(cid), competition=comp, context=season)
                     continue
                 n_matched += 1
                 matched_starters += 1
-                _, sid, _, ca, pa = snap
+                _, sid, _, ca, pa, _ = snap
                 if ca:
                     cas.append(ca)
                 if pa:
@@ -211,6 +252,7 @@ def main():
                 ok = False
         row["complete"] = ok
         rows.append(row)
+    con.commit()
 
     df = pd.DataFrame(rows)
     out = db.ROOT / "data" / "dataset.parquet"
@@ -221,7 +263,11 @@ def main():
         df.to_csv(out, index=False)
     cov = matched_starters / max(total_starters, 1)
     print(f"matches: {len(df)}, complete(>=8 matched/side): {int(df['complete'].sum())}")
+    print(f"by season complete:")
+    print(df[df.complete].groupby('season').size().to_string())
     print(f"starter->FM join coverage: {cov:.1%} ({matched_starters}/{total_starters})")
+    nun = con.execute("SELECT COUNT(*) FROM unmatched_name WHERE resolved_player_id IS NULL").fetchone()[0]
+    print(f"unmatched names flagged: {nun}")
     print(f"saved {out}")
     con.close()
 

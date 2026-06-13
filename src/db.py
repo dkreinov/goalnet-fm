@@ -157,6 +157,28 @@ def save_snapshot(con, *, pid: int, src: int, fmv: int | None, cid: int | None,
     return sid
 
 
+def competition_id(con, name: str, country: str = None, tier: int = None,
+                   rank: int = None, kind: str = "league") -> int:
+    row = con.execute("SELECT competition_id FROM competition WHERE name=?", (name,)).fetchone()
+    if row:
+        return row[0]
+    cur = con.execute(
+        "INSERT INTO competition (name, country, tier, rank, kind) VALUES (?,?,?,?,?)",
+        (name, country, tier, rank, kind))
+    return cur.lastrowid
+
+
+def record_unmatched(con, source: str, raw_name: str, club: str = None,
+                     competition: str = None, context: str = None) -> None:
+    """Flag a lineup name we could not join to an FM player, for later resolution."""
+    n = norm(raw_name)
+    con.execute(
+        """INSERT INTO unmatched_name (source, raw_name, norm_name, club, competition, context)
+           VALUES (?,?,?,?,?,?)
+           ON CONFLICT(source, norm_name, club) DO UPDATE SET n_seen = n_seen + 1""",
+        (source, raw_name, n, club, competition, context))
+
+
 def log(con, source: str, url: str, status: str, detail: str = "") -> None:
     con.execute(
         "INSERT INTO scrape_log (source, url, status, detail) VALUES (?,?,?,?)",
