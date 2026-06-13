@@ -1,0 +1,24 @@
+# Data artifacts — not versioned (regenerable by the pipeline; large / binary)
+data/
+*.db
+*.db-wal
+*.db-shm
+*.parquet
+*.pt
+*.csv
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+.ipynb_checkpoints/
+
+# OS / editor
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+
+# Research scratch samples
+_tmpdata/
