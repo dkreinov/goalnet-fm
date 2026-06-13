@@ -98,6 +98,15 @@ Key design decisions:
 Loaded so far: 17,717 league matches (8 leagues × 6 seasons), xG for top-5 (10,732 matches).
 ESPN lineups + fminside grades scraping in background.
 
+## 6b. Expansion progress log
+
+- 2026-06-13 17:04: EPL FM grades complete for ALL 6 editions (FM21-FM26). Dataset rebuild:
+  **2,252 complete matches** across 6 seasons (2020-21:343, 21-22:383, 22-23:382, 23-24:381,
+  24-25:382, 25-26:381) — up from 1,041 (POC). Overall starter-join coverage 54.7% (low only because
+  non-EPL leagues have lineups but FM grades still scraping). ESPN lineups at ~7,600 matches (through
+  Ligue 1; Championship/Eredivisie/Primeira Liga remain). fminside on EPL FM21 (db1, last EPL edition),
+  then La Liga/Serie A/Bundesliga/Ligue 1 × 6 editions.
+
 ## 6. Status log
 
 - 2026-06-12 21:47: project start; schema + db layer + fetch util done; 1140 matches loaded; 5 agents launched.

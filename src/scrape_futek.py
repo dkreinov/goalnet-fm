@@ -59,10 +59,12 @@ def parse_rows(html):
         if not tr:
             continue
         tds = [td.get_text(strip=True) for td in tr.select("td")]
-        if len(tds) >= 7:
+        # columns: [Name, Age, Position, Nationality, Club, Division, CA, PA]
+        # (the name cell holds the <a>, so tds[0] is the name, not the age)
+        if len(tds) >= 8:
             rows.append({"uid": m.group(1), "name": a.get_text(strip=True) or tds[0],
-                         "age": tds[0], "pos": tds[1], "nat": tds[2], "club": tds[3],
-                         "division": tds[4], "ca": tds[5], "pa": tds[6]})
+                         "age": tds[1], "pos": tds[2], "nat": tds[3], "club": tds[4],
+                         "division": tds[5], "ca": tds[6], "pa": tds[7]})
     return rows
 
 
