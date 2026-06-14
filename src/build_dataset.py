@@ -182,6 +182,7 @@ SEASON_END = {"2020-21": "2021-06-30", "2021-22": "2022-06-30", "2022-23": "2023
 
 
 def main():
+    import features
     con = db.connect()
     record_unmatched = "--no-flag" not in sys.argv
     snaps = load_snapshots(con)
@@ -193,11 +194,15 @@ def main():
 
     matches = con.execute(
         """SELECT m.match_id, m.match_date, m.home_club_id, m.away_club_id, m.home_goals,
-                  m.away_goals, se.label, COALESCE(co.name,'?')
+                  m.away_goals, se.label, COALESCE(co.name,'?'), m.competition_id, m.referee
            FROM match m JOIN season se ON se.season_id=m.season_id
            LEFT JOIN competition co ON co.competition_id=m.competition_id
            ORDER BY m.match_date""").fetchall()
     ctx = elo_and_form([(r[0], r[1], r[2], r[3], r[4], r[5]) for r in matches])
+    squad = features.squad_strength(con)
+    refstrict = features.referee_strictness(con)
+    seqf = features.sequential_features(
+        [(r[0], r[1], r[8], r[6], r[2], r[3], r[4], r[5]) for r in matches])
 
     pname = {r[0]: r[1] for r in con.execute("SELECT player_id, norm_name FROM player")}
     cname = {r[0]: r[1] for r in con.execute("SELECT club_id, name FROM club")}
@@ -206,15 +211,23 @@ def main():
         lineups[(r[0], r[2])].append((r[1], r[3]))
 
     rows, total_starters, matched_starters = [], 0, 0
-    for mid, date, hcid, acid, hg, ag, season, comp in matches:
+    for mid, date, hcid, acid, hg, ag, season, comp, comp_id, referee in matches:
         target_fmv = sfmv.get(season)
         season_end = SEASON_END.get(season, date)
         row = {"match_id": mid, "date": date, "season": season, "competition": comp,
                "home_goals": hg, "away_goals": ag,
-               "result": "H" if hg > ag else ("A" if ag > hg else "D"), **ctx[mid]}
+               "result": "H" if hg > ag else ("A" if ag > hg else "D"),
+               **ctx[mid], **seqf.get(mid, {}),
+               "ref_cards_avg": refstrict.get(referee)}
         mrow = con.execute("SELECT b365h, b365d, b365a, xg_home, xg_away FROM match WHERE match_id=?",
                            (mid,)).fetchone()
         row.update({"b365h": mrow[0], "b365d": mrow[1], "b365a": mrow[2]})
+        # full-squad strength per side (depth beyond the starting XI), from this season's FM db
+        for side, cid in (("home", hcid), ("away", acid)):
+            sq = squad.get((cid, target_fmv), {})
+            for k in ("squad_ca_mean", "squad_ca_max", "squad_ca_top11", "squad_size",
+                      "squad_value_total"):
+                row[f"{side}_{k}"] = sq.get(k)
         ok = True
         for side, cid in (("home", hcid), ("away", acid)):
             xi = lineups.get((mid, cid), [])
