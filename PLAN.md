@@ -107,6 +107,27 @@ ESPN lineups + fminside grades scraping in background.
   Ligue 1; Championship/Eredivisie/Primeira Liga remain). fminside on EPL FM21 (db1, last EPL edition),
   then La Liga/Serie A/Bundesliga/Ligue 1 × 6 editions.
 
+- 2026-06-13 21:55: ESPN club lineups DONE (16,153 matches w/ lineups, 8 leagues × 6 seasons,
+  only 66 unlinkable). National teams DONE: 2,707 matches, 2,375 w/ lineups (Friendlies 1478,
+  Nations League 502, WC-Q UEFA 442, Euros 102, World Cup 64, Copa 60, WC-Q CONMEBOL 59).
+  Verified national→FM-grade join: England (EPL players) 11/11 starters graded; smaller nations
+  partial until their leagues scraped. fminside still on La Liga editions (FM24/db5).
+
+- 2026-06-14 04:30: **7,240 complete matches** (>=8 graded starters/side), up from 2,252 (EPL-only)
+  and 1,041 (POC). All 6 seasons: 2020-21:1031, 21-22:1095, 22-23:1219, 23-24:1294, 24-25:1327, 25-26:1274.
+  By competition: EPL 2275 (full), La Liga 2272 (full), Serie A 1711 (db5 scraping), Championship 565
+  (via cross-league players — own grades pending 2nd run), Ligue 1 89 / Bundesliga 29 / Eredivisie 14 /
+  Primeira 5 (grades pending), national 205 (England/etc. with EPL+La Liga players). Overall starter→FM
+  join 66.3%. 10,863 players with snapshots. fminside single worker on Serie A FM24; Bundesliga+Ligue1
+  to follow, then 2nd run for Championship/Eredivisie/Primeira Liga, then rank 9+ leagues.
+
+- 2026-06-14 08:00: ESPN match-context + event backfill DONE (from cache, zero new network): 20,388
+  matches with kickoff_time + attendance, 19,399 venue, 19,623 formations, referee doubled to 15,316
+  (incl. internationals). match_event table: 390,192 minute-stamped events (goals/cards/subs) — feeds
+  the trajectory/autoregressive model. Schema v3 added: match context cols, match_event, manager +
+  manager_snapshot/attribute, club_attribute tables. Manager + club-reputation scraper to run after
+  player grades (fminside busy). Grade worker stalled on a timeout burst (Serie A db3) → restarted.
+
 ## 6. Status log
 
 - 2026-06-12 21:47: project start; schema + db layer + fetch util done; 1140 matches loaded; 5 agents launched.
