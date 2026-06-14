@@ -34,6 +34,15 @@ def dob_close(a, b):
         return False
 
 
+# transliterate characters that NFKD doesn't decompose, so "Groß"->"gross", "Søyland"->"soyland"
+_TRANSLIT = str.maketrans({"ß": "ss", "ø": "o", "Ø": "o", "ł": "l", "Ł": "l", "æ": "ae",
+                           "Æ": "ae", "œ": "oe", "đ": "d", "Đ": "d", "ð": "d", "þ": "th"})
+
+
+def xnorm(s):
+    return db.norm((s or "").translate(_TRANSLIT))
+
+
 def main():
     con = db.connect()
     espn_sid = con.execute("SELECT source_id FROM source WHERE name='espn'").fetchone()[0]
@@ -68,16 +77,27 @@ def main():
     # so ESPN common names ("Casemiro") and FM formal names both resolve to the right UID.
     pid_name = {pid: name for pid, name in con.execute("SELECT player_id, name FROM player")}
     name_to_uids = defaultdict(set)
+    tok_to_uids = defaultdict(set)   # distinctive token (len>=4) -> uids, for mononym/nickname matching
+
+    def index_name(uid, raw):
+        n = xnorm(raw)
+        if not n:
+            return
+        name_to_uids[n].add(uid)
+        for t in n.split():
+            if len(t) >= 4:
+                tok_to_uids[t].add(uid)
+
     for uid, formal in fm_formal.items():
-        n = db.norm(formal or "")
-        if n:
-            name_to_uids[n].add(uid)
+        index_name(uid, formal)
     for uid, pids in uid_to_gradepids.items():
         for p in pids:
-            n = db.norm(pid_name.get(p) or "")
-            if n:
-                name_to_uids[n].add(uid)
+            index_name(uid, pid_name.get(p))
     name_to_uids = {k: list(v) for k, v in name_to_uids.items()}
+    # keep all tokens (even common first names like "gabriel" — needed for mononym FM records);
+    # the strict club-then-DOB filter below resolves to exactly one or stays flagged, so commonness
+    # is safe. tok_to_uids stays a dict of sets.
+    tok_to_uids = dict(tok_to_uids)
     pid_clubs = defaultdict(set)
     for pid, cid in con.execute(
             "SELECT player_id, club_id FROM player_snapshot WHERE club_id IS NOT NULL"):
@@ -104,7 +124,7 @@ def main():
     rows = []
     for eid, pid in espn_pid.items():
         raw = espn_name_si.get(eid) or pid_name.get(pid) or ""
-        nn = db.norm(raw)
+        nn = xnorm(raw)
         edob = espn_dob.get(eid)
         eclubs = pid_match_clubs.get(pid, set())
         cands = name_to_uids.get(nn, [])
@@ -131,6 +151,32 @@ def main():
                     uid, conf, method = None, "ambiguous", "multi_dob_match"
                 else:
                     uid, conf, method = None, "ambiguous", "shared_name_unresolved"
+
+        # token-subset fallback for mononyms ("Alisson Becker"->"Alisson"), extra names, nicknames
+        # ("Andy Robertson"->surname "Robertson") — disambiguated strictly by club, then DOB.
+        if uid is None and conf in ("unmatched", "ambiguous"):
+            cand2 = set()
+            for t in nn.split():
+                if len(t) >= 4:
+                    cand2 |= tok_to_uids.get(t, set())
+            if cand2:
+                cmatch = [u for u in cand2 if eclubs & fm_clubs.get(u, set())]
+                if len(cmatch) == 1:
+                    u = cmatch[0]
+                    if edob and fm_dob.get(u) and dob_close(edob, fm_dob[u]):
+                        uid, conf, method = u, "confirmed", "token+club+dob"
+                    else:
+                        uid, conf, method = u, "high", "token+club"
+                elif len(cmatch) > 1:
+                    dm = [u for u in cmatch if edob and fm_dob.get(u) and dob_close(edob, fm_dob[u])]
+                    if len(dm) == 1:
+                        uid, conf, method = dm[0], "confirmed", "token+club+dob"
+                    else:
+                        conf, method = "ambiguous", "token_club_multi"
+                else:
+                    dm = [u for u in cand2 if edob and fm_dob.get(u) and dob_close(edob, fm_dob[u])]
+                    if len(dm) == 1:
+                        uid, conf, method = dm[0], "high", "token+dob"
         # representative grade player_id (None if this uid has no grades yet)
         fpid = None
         if uid and uid_to_gradepids.get(uid):

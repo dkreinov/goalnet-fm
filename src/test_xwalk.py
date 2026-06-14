@@ -68,6 +68,64 @@ def main():
     ).fetchone()[0]
     check(leaks == 0, f"ambiguous/unmatched rows carry NO fm_uid (leaks={leaks})")
 
+    # --- token-tier (mononym / nickname / diacritic) cases ---
+    from build_xwalk import xnorm
+    fm_name = {r[0]: r[1] for r in con.execute(
+        f"SELECT source_player_id, name FROM source_identity WHERE source_id={fmuid_sid}")}
+
+    def espn_id_for(norm_name):
+        r = con.execute(
+            """SELECT psi.source_player_id FROM player p
+               JOIN player_source_id psi ON psi.player_id=p.player_id AND psi.source_id=?
+               WHERE p.norm_name=?
+               ORDER BY (SELECT COUNT(*) FROM match_player mp WHERE mp.player_id=p.player_id) DESC
+               LIMIT 1""", (espn_sid, norm_name)).fetchone()
+        return r[0] if r else None
+
+    # 5/6/7: famous mononym/nickname players now link to the CORRECT FM player. Correctness is
+    # verified by EITHER a shared surname token OR an exact DOB match (Gabriel is stored "Gabriel"
+    # in FM with no surname, so name-token alone is insufficient — DOB proves identity).
+    for label, norm_name, must_token in (
+            ("Alisson Becker (mononym 'Alisson')", "alisson becker", "alisson"),
+            ("Gabriel Magalhaes (FM mononym 'Gabriel')", "gabriel magalhaes", "magalhaes"),
+            ("Andy Robertson (nickname Andy/Andrew)", "andy robertson", "robertson")):
+        eid = espn_id_for(norm_name)
+        row = con.execute("SELECT fm_uid, confidence, method FROM player_xwalk WHERE espn_player_id=?",
+                          (eid,)).fetchone() if eid else None
+        token_ok = bool(row and row[0] and must_token in xnorm(fm_name.get(row[0], "")).split())
+        dob_ok = bool(row and row[0] and dob_close(espn_dob.get(eid), fm_dob.get(row[0])))
+        check(bool(row and row[0]) and (token_ok or dob_ok),
+              f"{label} -> correct FM player [token={token_ok} dob={dob_ok} "
+              f"{(row[1], row[2]) if row else 'no espn id'}]")
+
+    # 8. SAFETY: every token-tier link satisfies the constraint the resolver claimed —
+    #    'token+club*' links must share a club; 'token+dob' links must have matching DOB.
+    espn_pid = {r[0]: r[1] for r in con.execute(
+        f"SELECT source_player_id, player_id FROM player_source_id WHERE source_id={espn_sid}")}
+    eclubs = defaultdict(set)
+    for pid, cid in con.execute("SELECT DISTINCT player_id, club_id FROM match_player"):
+        eclubs[pid].add(cid)
+    fm_src = [r[0] for r in con.execute("SELECT source_id FROM source WHERE name IN ('fminside','kaggle','futek')")]
+    uid_pids = defaultdict(set)
+    for sid in fm_src:
+        for uid, pid in con.execute("SELECT source_player_id, player_id FROM player_source_id WHERE source_id=?", (sid,)):
+            uid_pids[uid].add(pid)
+    pid_clubs = defaultdict(set)
+    for pid, cid in con.execute("SELECT player_id, club_id FROM player_snapshot WHERE club_id IS NOT NULL"):
+        pid_clubs[pid].add(cid)
+    fm_clubs = {uid: set().union(*(pid_clubs[p] for p in pids)) if pids else set() for uid, pids in uid_pids.items()}
+    bad = 0; ntok = 0
+    for eid, uid, method in con.execute(
+            "SELECT espn_player_id, fm_uid, method FROM player_xwalk WHERE method LIKE 'token%' AND fm_uid IS NOT NULL"):
+        ntok += 1
+        if "club" in method:
+            if not (eclubs.get(espn_pid.get(eid), set()) & fm_clubs.get(uid, set())):
+                bad += 1
+        elif method == "token+dob":
+            if not dob_close(espn_dob.get(eid), fm_dob.get(uid)):
+                bad += 1
+    check(ntok > 0 and bad == 0, f"all {ntok} token-tier links satisfy their club/DOB constraint (violations={bad})")
+
     con.close()
     print(f"\n{'ALL PASS' if not fails else f'{len(fails)} FAILURE(S)'}")
     sys.exit(1 if fails else 0)
