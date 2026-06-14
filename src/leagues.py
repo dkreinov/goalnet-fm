@@ -64,6 +64,21 @@ LEAGUES = [
          fm_league="LaLiga 2", fm_nat="Spain", fd="SP2", espn="esp.2", understat=None, verify=True),
     dict(rank=15, name="France Ligue 2", country="France", tier=2,
          fm_league="Ligue 2", fm_nat="France", fd="F2", espn="fra.2", understat=None, verify=True),
+    # English lower tiers (FM scouts the English pyramid deeply); football-data odds available
+    dict(rank=40, name="England League One", country="England", tier=3,
+         fm_league="League One", fm_nat="England", fd="E2", espn="eng.3", understat=None, verify=True),
+    dict(rank=41, name="England League Two", country="England", tier=4,
+         fm_league="League Two", fm_nat="England", fd="E3", espn="eng.4", understat=None, verify=True),
+    dict(rank=42, name="England National League", country="England", tier=5,
+         fm_league="National League", fm_nat="England", fd="EC", espn="eng.5", understat=None, verify=True),
+]
+
+# UEFA club cups — cross-league competitions (clubs from many leagues). ESPN-primary; players
+# join to FM grades via their domestic clubs (no separate fminside scrape needed for most).
+UEFA_CUPS = [
+    dict(rank=43, name="UEFA Champions League", country="Europe", tier=None, espn="uefa.champions", season_type="euro"),
+    dict(rank=44, name="UEFA Europa League", country="Europe", tier=None, espn="uefa.europa", season_type="euro"),
+    dict(rank=45, name="UEFA Conference League", country="Europe", tier=None, espn="uefa.europa.conf", season_type="euro"),
 ]
 
 BY_NAME = {l["name"]: l for l in LEAGUES}
@@ -126,7 +141,7 @@ EXTRA_LEAGUES = [
     dict(rank=38, name="South Africa Premiership", country="South Africa", tier=1, espn="rsa.1",
          fm_league="Premier Soccer League", fm_nat="South Africa", season_type="euro"),
 ]
-EXTRA_BY_NAME = {l["name"]: l for l in EXTRA_LEAGUES}
+EXTRA_BY_NAME = {l["name"]: l for l in EXTRA_LEAGUES + UEFA_CUPS}
 
 
 def espn_windows():
