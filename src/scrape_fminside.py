@@ -185,7 +185,10 @@ def main():
         k = args.index("--db")
         dbids = [int(x) for x in args[k + 1].split(",")]
         args = args[:k] + args[k + 2:]
-    target_leagues = [L.BY_NAME[n] for n in args] if args else L.enabled()
+    if args:
+        target_leagues = [L.BY_NAME.get(n) or L.EXTRA_BY_NAME[n] for n in args]
+    else:
+        target_leagues = L.enabled()
 
     con = dbmod.connect()
     src = dbmod.source_id(con, "fminside", BASE)
