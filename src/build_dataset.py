@@ -177,6 +177,36 @@ def elo_and_form(matches):
     return out
 
 
+def load_xwalk(con):
+    """lineup player_id -> (tuple of FM grade player_ids, confidence) via player_xwalk.
+    Only single-ESPN-id players resolve through the crosswalk; collision-merged players
+    (>=2 ESPN ids) and unmatched ones return nothing here and fall back to name-resolve."""
+    if not con.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='player_xwalk'").fetchone():
+        return {}
+    espn_sid = con.execute("SELECT source_id FROM source WHERE name='espn'").fetchone()[0]
+    pid_eids = defaultdict(list)
+    for eid, pid in con.execute(
+            "SELECT source_player_id, player_id FROM player_source_id WHERE source_id=?", (espn_sid,)):
+        pid_eids[pid].append(eid)
+    xw = {r[0]: (r[1], r[2]) for r in con.execute(
+        "SELECT espn_player_id, fm_uid, confidence FROM player_xwalk WHERE fm_uid IS NOT NULL")}
+    fm_src = [r[0] for r in con.execute(
+        "SELECT source_id FROM source WHERE name IN ('fminside','kaggle','futek')")]
+    uid_pids = defaultdict(set)
+    for sid in fm_src:
+        for uid, pid in con.execute(
+                "SELECT source_player_id, player_id FROM player_source_id WHERE source_id=?", (sid,)):
+            uid_pids[uid].add(pid)
+    out = {}
+    for pid, eids in pid_eids.items():
+        if len(eids) != 1:
+            continue
+        fm_uid, conf = xw.get(eids[0], (None, None))
+        if fm_uid and uid_pids.get(fm_uid):
+            out[pid] = (tuple(sorted(uid_pids[fm_uid])), conf)
+    return out
+
+
 SEASON_END = {"2020-21": "2021-06-30", "2021-22": "2022-06-30", "2022-23": "2023-06-30",
               "2023-24": "2024-06-30", "2024-25": "2025-06-30", "2025-26": "2026-06-30"}
 
@@ -189,8 +219,11 @@ def main():
     attrs = load_attrs(con)
     idx, has_snap = name_index(con)
     build_fallback(idx, con)
+    xwalk = load_xwalk(con)
     sfmv = season_fmv(con)
-    print(f"snapshot players: {len(snaps)}, name index: {len(idx)}, season->fmv: {sfmv}")
+    print(f"snapshot players: {len(snaps)}, name index: {len(idx)}, xwalk links: {len(xwalk)}, "
+          f"season->fmv: {sfmv}")
+    conf_tally = defaultdict(int)
 
     matches = con.execute(
         """SELECT m.match_id, m.match_date, m.home_club_id, m.away_club_id, m.home_goals,
@@ -234,15 +267,30 @@ def main():
             grp_vals = defaultdict(list)
             cas, pas = [], []
             n_matched = 0
+            conf_counts = defaultdict(int)
             for pid, pos in xi:
                 total_starters += 1
-                rpid = resolve(pid, pname.get(pid, ""), cid, has_snap, idx)
-                snap = pick_snapshot(snaps.get(rpid, []), target_fmv, season_end) if rpid else None
+                conf = None
+                snap = None
+                gp = xwalk.get(pid)                       # DOB/club-anchored crosswalk first
+                if gp:
+                    gps, conf = gp
+                    union = []
+                    for p in gps:
+                        union.extend(snaps.get(p, []))
+                    union.sort()
+                    snap = pick_snapshot(union, target_fmv, season_end)
+                if snap is None:                          # fallback: legacy name-resolve (no coverage loss)
+                    rpid = resolve(pid, pname.get(pid, ""), cid, has_snap, idx)
+                    snap = pick_snapshot(snaps.get(rpid, []), target_fmv, season_end) if rpid else None
+                    conf = "fallback" if snap is not None else None
                 if snap is None:
                     if record_unmatched:
                         db.record_unmatched(con, "build-dataset", pname.get(pid, str(pid)),
                                             club=cname.get(cid), competition=comp, context=season)
                     continue
+                conf_counts[conf] += 1
+                conf_tally[conf] += 1
                 n_matched += 1
                 matched_starters += 1
                 _, sid, _, ca, pa, _ = snap
@@ -255,6 +303,9 @@ def main():
                     grp_vals[(pg, cat)].append(val)
                     grp_vals[("ALL", cat)].append(val)
             row[f"{side}_n_matched"] = n_matched
+            row[f"{side}_n_confirmed"] = conf_counts.get("confirmed", 0)
+            row[f"{side}_n_high"] = conf_counts.get("high", 0)
+            row[f"{side}_n_fallback"] = conf_counts.get("fallback", 0)
             row[f"{side}_ca_mean"] = sum(cas) / len(cas) if cas else None
             row[f"{side}_pa_mean"] = sum(pas) / len(pas) if pas else None
             for pg in ("GK", "DEF", "MID", "ATT", "ALL"):
@@ -279,6 +330,10 @@ def main():
     print(f"by season complete:")
     print(df[df.complete].groupby('season').size().to_string())
     print(f"starter->FM join coverage: {cov:.1%} ({matched_starters}/{total_starters})")
+    tot_conf = sum(conf_tally.values()) or 1
+    print("grade-match confidence (of matched starters):")
+    for t in ("confirmed", "high", "fallback"):
+        print(f"  {t:10}: {conf_tally.get(t,0):,} ({100*conf_tally.get(t,0)/tot_conf:.0f}%)")
     nun = con.execute("SELECT COUNT(*) FROM unmatched_name WHERE resolved_player_id IS NULL").fetchone()[0]
     print(f"unmatched names flagged: {nun}")
     print(f"saved {out}")
