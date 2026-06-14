@@ -71,3 +71,53 @@ BY_NAME = {l["name"]: l for l in LEAGUES}
 
 def enabled(include_verify=False):
     return [l for l in LEAGUES if include_verify or not l.get("verify")]
+
+
+# --- ESPN-primary leagues (no football-data odds): results+lineups+context created from ESPN,
+# FM grades from fminside later. fm_league strings are best-guess, verified at grade-scrape time.
+# Continuous ~165-day windows tile the whole calendar so calendar-year leagues (Brazil/MLS/
+# Scandinavia/Japan, which play through summer) aren't missed by the European Aug-Jun windows.
+EXTRA_LEAGUES = [
+    dict(rank=16, name="Brazil Serie A", country="Brazil", tier=1, espn="bra.1",
+         fm_league="Brazilian National First Division", fm_nat="Brazil", season_type="calendar"),
+    dict(rank=17, name="Argentina Liga Profesional", country="Argentina", tier=1, espn="arg.1",
+         fm_league="Primera Division", fm_nat="Argentina", season_type="calendar"),
+    dict(rank=18, name="USA MLS", country="USA", tier=1, espn="usa.1",
+         fm_league="Major League Soccer", fm_nat="United States", season_type="calendar"),
+    dict(rank=19, name="Saudi Pro League", country="Saudi Arabia", tier=1, espn="ksa.1",
+         fm_league="Saudi Pro League", fm_nat="Saudi Arabia", season_type="euro"),
+    dict(rank=20, name="Mexico Liga MX", country="Mexico", tier=1, espn="mex.1",
+         fm_league="Liga MX", fm_nat="Mexico", season_type="split"),
+    dict(rank=21, name="Russia Premier League", country="Russia", tier=1, espn="rus.1",
+         fm_league="Russian Premier Division", fm_nat="Russia", season_type="euro"),
+    dict(rank=22, name="Austria Bundesliga", country="Austria", tier=1, espn="aut.1",
+         fm_league="Austrian Bundesliga", fm_nat="Austria", season_type="euro"),
+    dict(rank=23, name="Switzerland Super League", country="Switzerland", tier=1, espn="sui.1",
+         fm_league="Swiss Super League", fm_nat="Switzerland", season_type="euro"),
+    dict(rank=24, name="Greece Super League", country="Greece", tier=1, espn="gre.1",
+         fm_league="Super League", fm_nat="Greece", fd="G1", season_type="euro"),
+    dict(rank=25, name="Denmark Superliga", country="Denmark", tier=1, espn="den.1",
+         fm_league="Danish Superliga", fm_nat="Denmark", season_type="euro"),
+    dict(rank=26, name="Norway Eliteserien", country="Norway", tier=1, espn="nor.1",
+         fm_league="Eliteserien", fm_nat="Norway", season_type="calendar"),
+    dict(rank=27, name="Sweden Allsvenskan", country="Sweden", tier=1, espn="swe.1",
+         fm_league="Allsvenskan", fm_nat="Sweden", season_type="calendar"),
+    dict(rank=28, name="Australia A-League", country="Australia", tier=1, espn="aus.1",
+         fm_league="A-League", fm_nat="Australia", season_type="euro"),
+    dict(rank=29, name="Colombia Primera A", country="Colombia", tier=1, espn="col.1",
+         fm_league="Primera A", fm_nat="Colombia", season_type="split"),
+    dict(rank=30, name="Israel Ligat haAl", country="Israel", tier=1, espn="isr.1",
+         fm_league="Ligat ha'Al", fm_nat="Israel", season_type="euro", partial_lineups=True),
+    dict(rank=31, name="Japan J1 League", country="Japan", tier=1, espn="jpn.1",
+         fm_league="J1 League", fm_nat="Japan", season_type="calendar"),
+]
+EXTRA_BY_NAME = {l["name"]: l for l in EXTRA_LEAGUES}
+
+
+def espn_windows():
+    """Continuous ~165-day windows tiling Jan 2020 -> Jun 2026 (overlap ok; matches dedupe)."""
+    wins = []
+    for y in range(2020, 2027):
+        wins.append(f"{y}0101-{y}0615")
+        wins.append(f"{y}0601-{y}1215")
+    return wins
