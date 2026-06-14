@@ -110,6 +110,21 @@ EXTRA_LEAGUES = [
          fm_league="Ligat ha'Al", fm_nat="Israel", season_type="euro", partial_lineups=True),
     dict(rank=31, name="Japan J1 League", country="Japan", tier=1, espn="jpn.1",
          fm_league="J1 League", fm_nat="Japan", season_type="calendar"),
+    # second discovery batch (ESPN full lineups verified)
+    dict(rank=32, name="Chile Primera Division", country="Chile", tier=1, espn="chi.1",
+         fm_league="Primera Division", fm_nat="Chile", season_type="calendar"),
+    dict(rank=33, name="China Super League", country="China", tier=1, espn="chn.1",
+         fm_league="Chinese Super League", fm_nat="China", season_type="calendar"),
+    dict(rank=34, name="Ecuador LigaPro", country="Ecuador", tier=1, espn="ecu.1",
+         fm_league="Ecuadorian Serie A", fm_nat="Ecuador", season_type="calendar"),
+    dict(rank=35, name="India Super League", country="India", tier=1, espn="ind.1",
+         fm_league="Indian Super League", fm_nat="India", season_type="euro"),
+    dict(rank=36, name="Paraguay Primera Division", country="Paraguay", tier=1, espn="par.1",
+         fm_league="Paraguayan Primera Division", fm_nat="Paraguay", season_type="split"),
+    dict(rank=37, name="Peru Liga 1", country="Peru", tier=1, espn="per.1",
+         fm_league="Peruvian Primera Division", fm_nat="Peru", season_type="calendar"),
+    dict(rank=38, name="South Africa Premiership", country="South Africa", tier=1, espn="rsa.1",
+         fm_league="Premier Soccer League", fm_nat="South Africa", season_type="euro"),
 ]
 EXTRA_BY_NAME = {l["name"]: l for l in EXTRA_LEAGUES}
 

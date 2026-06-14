@@ -128,6 +128,18 @@ ESPN lineups + fminside grades scraping in background.
   manager_snapshot/attribute, club_attribute tables. Manager + club-reputation scraper to run after
   player grades (fminside busy). Grade worker stalled on a timeout burst (Serie A db3) → restarted.
 
+- 2026-06-14 12:00: KAGGLE BULK + FULL-ESPN-LEAGUE-DISCOVERY. Strategy finalized: FM grades =
+  Kaggle bulk CSVs for FM21/22/23 (db1/2/3, all leagues at once, source=kaggle, joined to lineup
+  players by name) + fminside for FM24/FMU25/FM26 (db5/6/7 only). Halves fminside work. Kaggle
+  parser: right-anchored (name from front, 47 attrs from trailing block) to survive unquoted commas
+  in money fields; 'nat1' recognized for the Natural-Fitness column. ESPN league universe = 244
+  competitions, 48 domestic top divisions. We now collect match data (ESPN-primary: results+lineups+
+  context+events) for 31 leagues with full lineups: 8 original + 17 (Brazil..Japan) + 7 (Chile/China/
+  Ecuador/India/Paraguay/Peru/South Africa). 17 more top divisions exist on ESPN but lack lineups
+  (Uruguay/Ireland/Uganda/Kenya/etc.) → would need other official sources (deferred, low value / often
+  not in FM DB). Leagues without football-data odds use ESPN as primary results source. 4 jobs running:
+  fminside grades (Ligue1/Bundesliga/Serie A db7,6,5), kaggle bulk, ESPN new-17, ESPN new-7.
+
 ## 6. Status log
 
 - 2026-06-12 21:47: project start; schema + db layer + fetch util done; 1140 matches loaded; 5 agents launched.

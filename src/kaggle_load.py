@@ -45,7 +45,8 @@ FM_CODE = {
     # physical
     "acc": ("acceleration", "physical"), "agi": ("agility", "physical"),
     "bal": ("balance", "physical"), "jum": ("jumping-reach", "physical"),
-    "nat": ("natural-fitness", "physical"), "pac": ("pace", "physical"),
+    "nat": ("natural-fitness", "physical"), "nat1": ("natural-fitness", "physical"),
+    "pac": ("pace", "physical"),
     "sta": ("stamina", "physical"), "str": ("strength", "physical"),
     # goalkeeping
     "aer": ("aerial-reach", "goalkeeping"), "cmd": ("command-of-area", "goalkeeping"),
