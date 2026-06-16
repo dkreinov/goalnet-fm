@@ -120,6 +120,13 @@ def main():
     for pid, cid in con.execute("SELECT DISTINCT player_id, club_id FROM match_player"):
         pid_match_clubs[pid].add(cid)
 
+    # learned synonyms (roster-discovered ESPN->FM links with different spelling): seed as confirmed,
+    # but only when DOB is consistent (or absent on one side) so authenticity stays intact.
+    learned = {}
+    if con.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='learned_alias'").fetchone():
+        for eid, uid in con.execute("SELECT espn_player_id, fm_uid FROM learned_alias WHERE fm_uid IS NOT NULL"):
+            learned[eid] = uid
+
     tiers = defaultdict(int)
     rows = []
     for eid, pid in espn_pid.items():
@@ -130,6 +137,16 @@ def main():
         cands = name_to_uids.get(nn, [])
 
         uid = None; conf = "unmatched"; method = "no_fm_name"
+        lu = learned.get(eid)
+        if lu and not (edob and fm_dob.get(lu) and not dob_close(edob, fm_dob[lu])):
+            # learned synonym, no DOB conflict -> accept directly (confirmed if DOB confirms it)
+            uid = lu
+            conf = "confirmed" if (edob and fm_dob.get(lu) and dob_close(edob, fm_dob[lu])) else "high"
+            method = "learned_alias"
+            fpid = sorted(uid_to_gradepids[uid])[0] if uid_to_gradepids.get(uid) else None
+            tiers[conf] += 1
+            rows.append((eid, pid, uid, fpid, conf, method))
+            continue
         if len(cands) == 1:
             u = cands[0]
             if edob and fm_dob.get(u):

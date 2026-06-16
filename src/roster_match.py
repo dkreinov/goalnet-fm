@@ -16,7 +16,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent))
 import db
 import leagues as L
-from build_xwalk import xnorm
+from build_xwalk import xnorm, dob_close
 from diag_roster import posbucket, EXCL
 
 
@@ -57,6 +57,18 @@ def load(con):
             "SELECT espn_player_pid, fm_uid, fm_player_id FROM player_xwalk WHERE fm_uid IS NOT NULL"):
         resolved[epid] = (uid, fpid)
     pname = {pid: nm for pid, nm in con.execute("SELECT player_id, name FROM player")}
+    # DOB: ESPN player_id -> dob, and FM uid -> dob (for DOB+club anchored assignment)
+    espn_sid = con.execute("SELECT source_id FROM source WHERE name='espn'").fetchone()[0]
+    eid_dob = {eid: dob for eid, dob in con.execute(
+        f"SELECT source_player_id, dob FROM source_identity WHERE source_id={espn_sid} AND dob IS NOT NULL")}
+    pid_dob = {}
+    for eid, pid in con.execute(
+            "SELECT source_player_id, player_id FROM player_source_id WHERE source_id=?", (espn_sid,)):
+        if eid in eid_dob:
+            pid_dob[pid] = eid_dob[eid]
+    fm_dob = {u: d for u, d in con.execute(
+        "SELECT source_player_id, dob FROM source_identity WHERE source_id="
+        "(SELECT source_id FROM source WHERE name='fm-uid') AND dob IS NOT NULL")}
     starters = defaultdict(list)
     for mid, pid, cid, pos in con.execute(
             "SELECT match_id, player_id, club_id, position FROM match_player WHERE started=1"):
@@ -71,7 +83,7 @@ def load(con):
                 appear[(r[0], lab)] += 1
     return dict(season_of=season_of, comp_of=comp_of, comp_name=comp_name, members=members,
                 uid_clubs=uid_clubs, resolved=resolved, pname=pname, uid_name=uid_name,
-                starters=starters, appear=appear)
+                starters=starters, appear=appear, pid_dob=pid_dob, fm_dob=fm_dob)
 
 
 def assign_side(D, mid, ecid, lab, hide_pid=None):
@@ -108,6 +120,14 @@ def assign_side(D, mid, ecid, lab, hide_pid=None):
     for pid, pb in unmatched:
         if not free:
             break
+        # DOB+club anchor: if the ESPN starter's DOB uniquely matches one free squad member, take it.
+        edob = D["pid_dob"].get(pid)
+        if edob:
+            dm = [u for u in free if D["fm_dob"].get(u) and dob_close(edob, D["fm_dob"][u])]
+            if len(dm) == 1:
+                out.append((pid, dm[0], "high", "dob_club"))
+                del free[dm[0]]
+                continue
         en = xnorm(D["pname"].get(pid, ""))
         maxap = max((D["appear"].get((u, lab), 0) for u in free), default=0) or 1
         def score(u, pbu):
@@ -119,7 +139,7 @@ def assign_side(D, mid, ecid, lab, hide_pid=None):
         sc, ns = score(best_u, free[best_u])
         only_pos = sum(1 for p in free.values() if p == pb) == 1
         conf = "high" if (ns > 0.55 or (only_pos and pb != "?")) else "medium"
-        out.append((pid, best_u, conf))
+        out.append((pid, best_u, conf, "roster"))
         del free[best_u]
     return out
 
@@ -170,7 +190,7 @@ def selftest(con, D, n=4000):
         pid_hide = in_sq[mid % len(in_sq)]
         true_uid = D["resolved"][pid_hide][0]
         res = assign_side(D, mid, cid, lab, hide_pid=pid_hide)
-        got = dict((p, u) for p, u, _ in res).get(pid_hide)
+        got = dict((p, u) for p, u, *_ in res).get(pid_hide)
         ok += (got == true_uid); miss += (got != true_uid)
         if ok + miss >= n:
             break
@@ -197,8 +217,8 @@ def main():
         lab = D["season_of"].get(mid)
         if not lab:
             continue
-        for pid, uid, conf in assign_side(D, mid, ecid, lab):
-            rows.append((mid, pid, uid, "roster", conf)); nconf[conf] += 1
+        for pid, uid, conf, method in assign_side(D, mid, ecid, lab):
+            rows.append((mid, pid, uid, method, conf)); nconf[conf] += 1
     con.execute("BEGIN")
     con.executemany("INSERT OR REPLACE INTO match_grade_link VALUES (?,?,?,?,?)", rows)
     con.execute("COMMIT")
