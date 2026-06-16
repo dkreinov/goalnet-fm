@@ -142,37 +142,107 @@ def league_player_urls(dbid: int, fm_league: str, fm_nat: str) -> list[str]:
     return sorted(purls)
 
 
-def scrape_set(con, src, urls, fmv, snapshot_date, tag):
-    saved = skipped = errors = 0
-    for i, pu in enumerate(urls):
-        uid_m = re.search(r"/players/\d+-[^/]+/(\d+)-", pu)
-        uid = uid_m.group(1) if uid_m else pu
+def _uid_of(pu):
+    m = re.search(r"/players/\d+-[^/]+/(\d+)-", pu)
+    return m.group(1) if m else pu
+
+
+def _save_parsed(con, src, fmv, snapshot_date, uid, pu, p, counts):
+    """Serial DB write for one parsed player. Mutates counts=[saved,skipped,errors]."""
+    if not p or not p["attrs"]:
+        counts[2] += 1
+        dbmod.log(con, "fminside", pu, "skip", "no attrs parsed")
+        return
+    pid = dbmod.player_id(con, p["name"], src=src, src_player_id=uid)
+    cid = dbmod.club_id(con, p["club"]) if p["club"] else None
+    sid = dbmod.save_snapshot(
+        con, pid=pid, src=src, fmv=fmv, cid=cid, snapshot_date=snapshot_date,
+        attrs=p["attrs"],
+        meta={k: p[k] for k in ("position", "ca", "pa", "value_eur", "wage_eur",
+                                "foot_left", "foot_right", "height_cm", "weight_kg")})
+    if sid:
+        counts[0] += 1
+    else:
+        counts[1] += 1
+
+
+BATCH = 200   # players per explicit transaction; one fsync per batch instead of per-statement
+
+
+def scrape_set(con, src, urls, fmv, snapshot_date, tag, workers=1):
+    """Fetch+parse player pages, then save serially. workers>1 fetches pages
+    concurrently — SAFE because player pages are URL-driven (no session filter);
+    only enumeration needs the per-IP session. DB writes stay on this thread.
+
+    Writes are wrapped in explicit BEGIN/COMMIT every BATCH players: with WAL +
+    synchronous=NORMAL this collapses ~51 per-player fsyncs into one per batch.
+    A final COMMIT always runs (finally) so the last partial batch is never lost."""
+    counts = [0, 0, 0]   # saved, skipped, errors
+
+    def save_one(uid, pu, p):
         try:
-            html = fetch.get(BASE + pu, min_delay=2.5, timeout=90)
-            p = parse_player(html)
-            if not p or not p["attrs"]:
-                errors += 1
-                dbmod.log(con, "fminside", pu, "skip", "no attrs parsed")
-                continue
-            pid = dbmod.player_id(con, p["name"], src=src, src_player_id=uid)
-            cid = dbmod.club_id(con, p["club"]) if p["club"] else None
-            sid = dbmod.save_snapshot(
-                con, pid=pid, src=src, fmv=fmv, cid=cid, snapshot_date=snapshot_date,
-                attrs=p["attrs"],
-                meta={k: p[k] for k in ("position", "ca", "pa", "value_eur", "wage_eur",
-                                        "foot_left", "foot_right", "height_cm", "weight_kg")})
-            if sid:
-                saved += 1
-            else:
-                skipped += 1
-            if (i + 1) % 100 == 0:
-                con.commit()
-                print(f"    {tag}: {i+1}/{len(urls)} saved={saved} skip={skipped} err={errors}", flush=True)
+            _save_parsed(con, src, fmv, snapshot_date, uid, pu, p, counts)
         except Exception as e:
-            errors += 1
+            counts[2] += 1
             dbmod.log(con, "fminside", pu, "error", str(e))
-    con.commit()
-    return saved, skipped, errors
+
+    if workers <= 1:
+        con.execute("BEGIN")
+        in_txn = 0
+        try:
+            for i, pu in enumerate(urls):
+                try:
+                    html = fetch.get(BASE + pu, min_delay=2.5, timeout=90)
+                    save_one(_uid_of(pu), pu, parse_player(html))
+                except Exception as e:
+                    counts[2] += 1
+                    dbmod.log(con, "fminside", pu, "error", str(e))
+                in_txn += 1
+                if in_txn >= BATCH:
+                    con.execute("COMMIT"); con.execute("BEGIN"); in_txn = 0
+                if (i + 1) % 100 == 0:
+                    print(f"    {tag}: {i+1}/{len(urls)} saved={counts[0]} skip={counts[1]} err={counts[2]}", flush=True)
+        finally:
+            try:
+                con.execute("COMMIT")
+            except Exception:
+                pass
+        return tuple(counts)
+
+    # parallel: pool fetches+parses (min_delay=0 -> concurrency capped by pool size);
+    # results drain to the main thread for serial, batched sqlite writes.
+    from concurrent.futures import ThreadPoolExecutor, as_completed
+
+    def work(pu):
+        html = fetch.get(BASE + pu, min_delay=0.0, timeout=90)
+        return _uid_of(pu), pu, parse_player(html)
+
+    con.execute("BEGIN")
+    in_txn = 0
+    done = 0
+    try:
+        with ThreadPoolExecutor(max_workers=workers) as ex:
+            futs = {ex.submit(work, pu): pu for pu in urls}
+            for fut in as_completed(futs):
+                pu = futs[fut]
+                try:
+                    uid, pu2, p = fut.result()
+                    save_one(uid, pu2, p)
+                except Exception as e:
+                    counts[2] += 1
+                    dbmod.log(con, "fminside", pu, "error", str(e))
+                in_txn += 1
+                done += 1
+                if in_txn >= BATCH:
+                    con.execute("COMMIT"); con.execute("BEGIN"); in_txn = 0
+                if done % 100 == 0:
+                    print(f"    {tag}: {done}/{len(urls)} saved={counts[0]} skip={counts[1]} err={counts[2]} (x{workers})", flush=True)
+    finally:
+        try:
+            con.execute("COMMIT")
+        except Exception:
+            pass
+    return tuple(counts)
 
 
 def main():
@@ -181,9 +251,14 @@ def main():
     import leagues as L
     args = sys.argv[1:]
     dbids = [1, 2, 3, 5, 6, 7]
+    workers = 1
     if "--db" in args:
         k = args.index("--db")
         dbids = [int(x) for x in args[k + 1].split(",")]
+        args = args[:k] + args[k + 2:]
+    if "--workers" in args:
+        k = args.index("--workers")
+        workers = int(args[k + 1])
         args = args[:k] + args[k + 2:]
     if args:
         target_leagues = [L.BY_NAME.get(n) or L.EXTRA_BY_NAME[n] for n in args]
@@ -191,6 +266,10 @@ def main():
         target_leagues = L.enabled()
 
     con = dbmod.connect()
+    # WAL + NORMAL makes the batched commits in scrape_set cheap (one fsync/batch).
+    # Safe: WAL is a persistent file-level mode; only this process writes during a grade run.
+    con.execute("PRAGMA journal_mode=WAL")
+    con.execute("PRAGMA synchronous=NORMAL")
     src = dbmod.source_id(con, "fminside", BASE)
     for lg in target_leagues:
         print(f"== {lg['name']} (rank {lg['rank']}) ==")
@@ -208,7 +287,7 @@ def main():
                 dbmod.log(con, "fminside", tag, "skip", "no players enumerated")
                 continue
             dbmod.log(con, "fminside", tag, "ok", f"enumerated {len(urls)}")
-            saved, skipped, errors = scrape_set(con, src, urls, fmv, cfg["date"], tag)
+            saved, skipped, errors = scrape_set(con, src, urls, fmv, cfg["date"], tag, workers=workers)
             dbmod.log(con, "fminside", tag, "ok", f"done saved={saved} skip={skipped} err={errors}")
             print(f"  {tag} DONE saved={saved} skip={skipped} err={errors}")
     con.close()

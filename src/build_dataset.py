@@ -207,6 +207,23 @@ def load_xwalk(con):
     return out
 
 
+def load_roster(con):
+    """match-level roster-constrained links: (match_id, player_id) -> (fm_uid, confidence),
+    plus fm_uid -> grade player_ids. Empty if roster_match.py hasn't run."""
+    if not con.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='match_grade_link'").fetchone():
+        return {}, {}
+    rmap = {(mid, pid): (uid, conf) for mid, pid, uid, conf in con.execute(
+        "SELECT match_id, player_id, fm_uid, confidence FROM match_grade_link WHERE fm_uid IS NOT NULL")}
+    fm_src = [r[0] for r in con.execute(
+        "SELECT source_id FROM source WHERE name IN ('fminside','kaggle','futek')")]
+    uid_pids = defaultdict(set)
+    for sid in fm_src:
+        for uid, pid in con.execute(
+                "SELECT source_player_id, player_id FROM player_source_id WHERE source_id=?", (sid,)):
+            uid_pids[uid].add(pid)
+    return rmap, uid_pids
+
+
 SEASON_END = {"2020-21": "2021-06-30", "2021-22": "2022-06-30", "2022-23": "2023-06-30",
               "2023-24": "2024-06-30", "2024-25": "2025-06-30", "2025-26": "2026-06-30"}
 
@@ -220,9 +237,10 @@ def main():
     idx, has_snap = name_index(con)
     build_fallback(idx, con)
     xwalk = load_xwalk(con)
+    roster, ruid_pids = load_roster(con)
     sfmv = season_fmv(con)
     print(f"snapshot players: {len(snaps)}, name index: {len(idx)}, xwalk links: {len(xwalk)}, "
-          f"season->fmv: {sfmv}")
+          f"roster links: {len(roster)}, season->fmv: {sfmv}")
     conf_tally = defaultdict(int)
 
     matches = con.execute(
@@ -284,6 +302,16 @@ def main():
                     rpid = resolve(pid, pname.get(pid, ""), cid, has_snap, idx)
                     snap = pick_snapshot(snaps.get(rpid, []), target_fmv, season_end) if rpid else None
                     conf = "fallback" if snap is not None else None
+                if snap is None:                          # roster-constrained club-squad assignment
+                    rl = roster.get((mid, pid))
+                    if rl:
+                        ruid, rconf = rl
+                        union = []
+                        for p in ruid_pids.get(ruid, ()):
+                            union.extend(snaps.get(p, []))
+                        union.sort()
+                        snap = pick_snapshot(union, target_fmv, season_end)
+                        conf = ("roster_" + rconf) if snap is not None else None
                 if snap is None:
                     if record_unmatched:
                         db.record_unmatched(con, "build-dataset", pname.get(pid, str(pid)),
@@ -306,6 +334,8 @@ def main():
             row[f"{side}_n_confirmed"] = conf_counts.get("confirmed", 0)
             row[f"{side}_n_high"] = conf_counts.get("high", 0)
             row[f"{side}_n_fallback"] = conf_counts.get("fallback", 0)
+            row[f"{side}_n_roster_high"] = conf_counts.get("roster_high", 0)
+            row[f"{side}_n_roster_medium"] = conf_counts.get("roster_medium", 0)
             row[f"{side}_ca_mean"] = sum(cas) / len(cas) if cas else None
             row[f"{side}_pa_mean"] = sum(pas) / len(pas) if pas else None
             for pg in ("GK", "DEF", "MID", "ATT", "ALL"):
@@ -332,8 +362,8 @@ def main():
     print(f"starter->FM join coverage: {cov:.1%} ({matched_starters}/{total_starters})")
     tot_conf = sum(conf_tally.values()) or 1
     print("grade-match confidence (of matched starters):")
-    for t in ("confirmed", "high", "fallback"):
-        print(f"  {t:10}: {conf_tally.get(t,0):,} ({100*conf_tally.get(t,0)/tot_conf:.0f}%)")
+    for t in ("confirmed", "high", "fallback", "roster_high", "roster_medium"):
+        print(f"  {t:14}: {conf_tally.get(t,0):,} ({100*conf_tally.get(t,0)/tot_conf:.0f}%)")
     nun = con.execute("SELECT COUNT(*) FROM unmatched_name WHERE resolved_player_id IS NULL").fetchone()[0]
     print(f"unmatched names flagged: {nun}")
     print(f"saved {out}")
