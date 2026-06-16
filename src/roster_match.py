@@ -204,6 +204,36 @@ def main():
     con.execute("COMMIT")
     print(f"match_grade_link: {len(rows):,} roster-assigned starters  ({dict(nconf)})")
 
+    # LEARN name synonyms: persist HIGH-confidence (espn name -> FM uid/name) discoveries where
+    # the names actually differ, so build_xwalk can seed them as confirmed links next run.
+    espn_sid = con.execute("SELECT source_id FROM source WHERE name='espn'").fetchone()[0]
+    pid_eid = {pid: eid for eid, pid in con.execute(
+        "SELECT source_player_id, player_id FROM player_source_id WHERE source_id=?", (espn_sid,))}
+    con.execute("""CREATE TABLE IF NOT EXISTS learned_alias(
+        espn_player_id TEXT PRIMARY KEY, espn_name TEXT, fm_uid TEXT, fm_name TEXT,
+        votes INTEGER DEFAULT 1)""")
+    alias = {}   # espn_id -> (espn_name, fm_uid, fm_name); vote across matches, keep majority
+    votes = Counter()
+    for mid, pid, uid, method, conf in rows:
+        if conf != "high":
+            continue
+        eid = pid_eid.get(pid)
+        en = D["pname"].get(pid, ""); fn = D["uid_name"].get(uid, "")
+        if not eid or not en or xnorm(en) == xnorm(fn):   # skip if NORMALIZED names already identical
+            continue
+        votes[(eid, uid)] += 1
+        alias[eid] = (D["pname"].get(pid, ""), uid, D["uid_name"].get(uid, ""))
+    # keep, per espn id, the uid with the most match-level votes (stability)
+    best = {}
+    for (eid, uid), v in votes.items():
+        if eid not in best or v > best[eid][1]:
+            best[eid] = (uid, v)
+    arows = [(eid, alias[eid][0], uid, alias[eid][2], v) for eid, (uid, v) in best.items()]
+    con.execute("BEGIN")
+    con.executemany("INSERT OR REPLACE INTO learned_alias VALUES (?,?,?,?,?)", arows)
+    con.execute("COMMIT")
+    print(f"learned_alias: {len(arows):,} ESPN->FM name synonyms recorded (high-conf, names differ)")
+
 
 if __name__ == "__main__":
     main()
