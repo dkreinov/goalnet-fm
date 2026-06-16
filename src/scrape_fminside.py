@@ -169,6 +169,16 @@ def _save_parsed(con, src, fmv, snapshot_date, uid, pu, p, counts):
 BATCH = 200   # players per explicit transaction; one fsync per batch instead of per-statement
 
 
+def _begin(con):
+    if not con.in_transaction:
+        con.execute("BEGIN")
+
+
+def _commit(con):
+    if con.in_transaction:        # guard: a db-helper's internal commit may have closed it already
+        con.execute("COMMIT")
+
+
 def scrape_set(con, src, urls, fmv, snapshot_date, tag, workers=1):
     """Fetch+parse player pages, then save serially. workers>1 fetches pages
     concurrently — SAFE because player pages are URL-driven (no session filter);
@@ -187,7 +197,7 @@ def scrape_set(con, src, urls, fmv, snapshot_date, tag, workers=1):
             dbmod.log(con, "fminside", pu, "error", str(e))
 
     if workers <= 1:
-        con.execute("BEGIN")
+        _begin(con)
         in_txn = 0
         try:
             for i, pu in enumerate(urls):
@@ -199,14 +209,11 @@ def scrape_set(con, src, urls, fmv, snapshot_date, tag, workers=1):
                     dbmod.log(con, "fminside", pu, "error", str(e))
                 in_txn += 1
                 if in_txn >= BATCH:
-                    con.execute("COMMIT"); con.execute("BEGIN"); in_txn = 0
+                    _commit(con); _begin(con); in_txn = 0
                 if (i + 1) % 100 == 0:
                     print(f"    {tag}: {i+1}/{len(urls)} saved={counts[0]} skip={counts[1]} err={counts[2]}", flush=True)
         finally:
-            try:
-                con.execute("COMMIT")
-            except Exception:
-                pass
+            _commit(con)
         return tuple(counts)
 
     # parallel: pool fetches+parses (min_delay=0 -> concurrency capped by pool size);
@@ -217,7 +224,7 @@ def scrape_set(con, src, urls, fmv, snapshot_date, tag, workers=1):
         html = fetch.get(BASE + pu, min_delay=0.0, timeout=90)
         return _uid_of(pu), pu, parse_player(html)
 
-    con.execute("BEGIN")
+    _begin(con)
     in_txn = 0
     done = 0
     try:
@@ -234,14 +241,11 @@ def scrape_set(con, src, urls, fmv, snapshot_date, tag, workers=1):
                 in_txn += 1
                 done += 1
                 if in_txn >= BATCH:
-                    con.execute("COMMIT"); con.execute("BEGIN"); in_txn = 0
+                    _commit(con); _begin(con); in_txn = 0
                 if done % 100 == 0:
                     print(f"    {tag}: {done}/{len(urls)} saved={counts[0]} skip={counts[1]} err={counts[2]} (x{workers})", flush=True)
     finally:
-        try:
-            con.execute("COMMIT")
-        except Exception:
-            pass
+        _commit(con)
     return tuple(counts)
 
 
