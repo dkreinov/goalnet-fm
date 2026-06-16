@@ -109,11 +109,11 @@ def main():
         for win in L.espn_windows():
             run_code(con, code, win, cid, espn_pid, stats)
         con.commit()
-    for comp in COMPETITIONS:
-        cid = db.competition_id(con, comp["name"])
-        print(f"== {comp['name']} ==", flush=True)
-        for win in L.espn_windows():
-            run_code(con, comp["code"], win, cid, espn_pid, stats)
+    for (code, comp_name), windows in COMPETITIONS.items():
+        cid = db.competition_id(con, comp_name)
+        print(f"== {comp_name} ==", flush=True)
+        for win in windows:
+            run_code(con, code, win, cid, espn_pid, stats)
         con.commit()
     # link rate
     tot = con.execute("SELECT COUNT(*) FROM match_sub").fetchone()[0]
