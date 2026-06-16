@@ -120,11 +120,11 @@ EXTRA_LEAGUES = [
     dict(rank=28, name="Australia A-League", country="Australia", tier=1, espn="aus.1",
          fm_league="A-League", fm_nat="Australia", season_type="euro"),
     dict(rank=29, name="Colombia Primera A", country="Colombia", tier=1, espn="col.1",
-         fm_league="Primera A", fm_nat="Colombia", season_type="split"),
+         fm_league="Categoria Primera A", fm_nat="Colombia", season_type="split"),
     dict(rank=30, name="Israel Ligat haAl", country="Israel", tier=1, espn="isr.1",
          fm_league="Ligat ha'Al", fm_nat="Israel", season_type="euro", partial_lineups=True),
     dict(rank=31, name="Japan J1 League", country="Japan", tier=1, espn="jpn.1",
-         fm_league="J1 League", fm_nat="Japan", season_type="calendar"),
+         fm_league="", fm_nat="Japan", season_type="calendar"),  # no J1 league string resolves on fminside; enumerate by nationality (30 JP clubs, incl women's — harmless, don't link)
     # second discovery batch (ESPN full lineups verified)
     dict(rank=32, name="Chile Primera Division", country="Chile", tier=1, espn="chi.1",
          fm_league="Primera Division", fm_nat="Chile", season_type="calendar"),
