@@ -102,7 +102,12 @@ def main():
         if tm_dob:
             dm = [u for u in cands if D["fm_dob"].get(u) and dob_close(tm_dob, D["fm_dob"][u])]
             if len(dm) == 1:
-                hit, method = dm[0], "tm_dob"
+                # corroborate the DOB hit with a shared name token, else it may be a DOB COLLISION
+                # (a different squad player with the same birthday). Drops unrelated-name false merges.
+                toks = {t for t in (xnorm(name) + " " + xnorm(tm_name or "")).split() if len(t) >= 3}
+                ftoks = {t for t in xnorm(D["uid_name"].get(dm[0], "")).split() if len(t) >= 3}
+                if toks & ftoks:
+                    hit, method = dm[0], "tm_dob"
         if hit is None and tm_name:
             nn = xnorm(tm_name)
             nm = [u for u in cands if fmname.get(u) == nn]
