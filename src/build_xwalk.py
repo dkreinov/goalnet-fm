@@ -11,7 +11,7 @@ Writes player_xwalk. Re-runnable (drops+rebuilds). Works on partial ESPN DOB (na
 Usage: python D:/Programming/claude/FM/src/build_xwalk.py
 """
 import sys
-from collections import defaultdict
+from collections import defaultdict, Counter
 from datetime import date
 from pathlib import Path
 
@@ -200,6 +200,40 @@ def main():
             fpid = sorted(uid_to_gradepids[uid])[0]
         tiers[conf] += 1
         rows.append((eid, pid, uid, fpid, conf, method))
+
+    # --- club-season squad disambiguation: the existing name+club tier compares ESPN club_ids to FM
+    # grade club_ids (different id-spaces), so it rarely fires. Build a bridge ESPN club -> FM grade-club
+    # from the already-confirmed/high links, then resolve 'ambiguous' shared names by which candidate is
+    # actually in the player's club squad. Within a club a name is almost always unique. ---
+    eclub_gc = defaultdict(Counter)
+    for eid, pid, uid, fpid, conf, method in rows:
+        if uid and conf in ("confirmed", "high"):
+            for ec in pid_match_clubs.get(pid, ()):
+                for gc in fm_clubs.get(uid, ()):
+                    eclub_gc[ec][gc] += 1
+    eclub_to_g = {ec: ({c for c, n in cnt.items() if n >= 2} or {cnt.most_common(1)[0][0]})
+                  for ec, cnt in eclub_gc.items()}
+    upgraded = 0
+    for i, (eid, pid, uid, fpid, conf, method) in enumerate(rows):
+        if uid is not None or conf != "ambiguous":
+            continue
+        cands = name_to_uids.get(xnorm(espn_name_si.get(eid) or pid_name.get(pid) or ""), [])
+        if len(cands) < 2:
+            continue
+        bridged = set()
+        for ec in pid_match_clubs.get(pid, set()):
+            bridged |= eclub_to_g.get(ec, set())
+        cmatch = [u for u in cands if fm_clubs.get(u, set()) & bridged]
+        if len(cmatch) != 1:
+            continue
+        u = cmatch[0]
+        edob = espn_dob.get(eid)
+        if edob and fm_dob.get(u) and not dob_close(edob, fm_dob[u]):   # keep DOB safety
+            continue
+        fp = sorted(uid_to_gradepids[u])[0] if uid_to_gradepids.get(u) else None
+        rows[i] = (eid, pid, u, fp, "high", "name+squad")
+        tiers["ambiguous"] -= 1; tiers["high"] += 1; upgraded += 1
+    print(f"club-squad disambiguation: upgraded {upgraded:,} ambiguous -> high")
 
     con.executemany(
         "INSERT INTO player_xwalk (espn_player_id, espn_player_pid, fm_uid, fm_player_id, confidence, method) "
