@@ -140,6 +140,18 @@ EXTRA_LEAGUES = [
          fm_league="Peruvian Primera Division", fm_nat="Peru", season_type="calendar"),
     dict(rank=38, name="South Africa Premiership", country="South Africa", tier=1, espn="rsa.1",
          fm_league="Premier Soccer League", fm_nat="South Africa", season_type="euro"),
+    # added 2026-06-18 (ESPN full lineups verified via probe_espn_leagues.py sweep). fm_league best-guess;
+    # verify with probe_fminside before trusting the fminside grade enumeration.
+    dict(rank=39, name="Romania Liga I", country="Romania", tier=1, espn="rou.1",
+         fm_league="SuperLiga", fm_nat="Romania", season_type="euro"),
+    dict(rank=46, name="Scotland Championship", country="Scotland", tier=2, espn="sco.2",
+         fm_league="Championship", fm_nat="Scotland", season_type="euro"),
+    dict(rank=47, name="Netherlands Eerste Divisie", country="Netherlands", tier=2, espn="ned.2",
+         fm_league="Eerste Divisie", fm_nat="Netherlands", season_type="euro"),
+    # NOTE: Argentina Primera Nacional (arg.2) + Brazil Serie B (bra.2) have ESPN lineups too, but were
+    # SKIPPED 2026-06-18: they inherit the same South-American common-name ambiguity as their first divisions
+    # (Brazil Serie A stuck at ~6% per-match readiness) plus thinner lower-tier FM grade coverage -> they'd add
+    # mostly not-ready matches. Distinctive-name European leagues (Romania/Scotland-2/Netherlands-2) connect cleanly.
 ]
 EXTRA_BY_NAME = {l["name"]: l for l in EXTRA_LEAGUES + UEFA_CUPS}
 

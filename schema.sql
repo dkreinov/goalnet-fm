@@ -49,6 +49,9 @@ CREATE TABLE IF NOT EXISTS player_source_id (  -- source's own id for a player (
     player_id        INTEGER NOT NULL REFERENCES player(player_id),
     PRIMARY KEY (source_id, source_player_id)
 );
+-- FM-UID is shared across grade sources; db.player_id(grade_uid=True) looks up by source_player_id
+-- ALONE, which the PK (source_id-leading) can't serve -> index it or that lookup full-scans per call.
+CREATE INDEX IF NOT EXISTS ix_psi_srcpid ON player_source_id(source_player_id);
 
 -- One snapshot = one observation of a player's full rating set at a point in time.
 CREATE TABLE IF NOT EXISTS player_snapshot (

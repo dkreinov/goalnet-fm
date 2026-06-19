@@ -69,11 +69,24 @@ def norm_code(c):
     return re.sub(r"[^a-z0-9]", "", str(c).lower())
 
 
+def parse_dob(raw):
+    """kaggle DoB is 'D/M/YYYY (NN years old)' -> ISO 'YYYY-MM-DD'."""
+    m = re.match(r"\s*(\d{1,2})/(\d{1,2})/(\d{4})", str(raw))
+    if not m:
+        return None
+    d, mo, y = m.groups()
+    return f"{y}-{int(mo):02d}-{int(d):02d}"
+
+
 def analyze_header(header):
-    """Return (name_idx, K, attr_names) where attr_names are the canonical names of the trailing
-    K columns (the contiguous attribute block at the end)."""
+    """Return (name_idx, K, attr_names, club_idx, dob_idx). attr_names are the canonical names of the
+    trailing K attribute columns. club_idx/dob_idx are FRONT columns (before the comma-drifting money
+    fields) so they're safe to read by absolute index — these carry the club discriminator + DOB that
+    let us disambiguate common names (Gabriel/Lucas/Silva) in kaggle-only leagues (Brazil/Portugal/...)."""
     cols = [str(c).strip() for c in header]
     name_idx = next((i for i, c in enumerate(cols) if c.lower() == "name"), 1)
+    club_idx = next((i for i, c in enumerate(cols) if c.lower() == "club"), None)
+    dob_idx = next((i for i, c in enumerate(cols) if c.lower() in ("dob", "date of birth")), None)
     attr_names = []
     for c in reversed(cols):
         code = norm_code(c)
@@ -82,7 +95,7 @@ def analyze_header(header):
         else:
             break
     attr_names.reverse()
-    return name_idx, len(attr_names), attr_names
+    return name_idx, len(attr_names), attr_names, club_idx, dob_idx
 
 
 def download():
@@ -96,7 +109,7 @@ def load_edition(con, csv_path, game, db_version, date, known):
     with open(csv_path, encoding="utf-8", errors="replace", newline="") as f:
         reader = csv.reader(f)
         header = next(reader)
-        name_idx, K, attr_names = analyze_header(header)
+        name_idx, K, attr_names, club_idx, dob_idx = analyze_header(header)
         if K < 30:
             print(f"  {csv_path.name}: only {K} trailing attr cols — skip"); return 0, 0
         cat_of = {v[0]: v[1] for v in FM_CODE.values()}  # canonical attr name -> category
@@ -123,8 +136,11 @@ def load_edition(con, csv_path, game, db_version, date, known):
                     continue
             if len(attrs) < 20:
                 continue
-            pid = db.player_id(con, name, src=src, src_player_id=fields[0].strip() or None)
-            sid = db.save_snapshot(con, pid=pid, src=src, fmv=fmv, cid=None,
+            club = fields[club_idx].strip() if club_idx is not None and len(fields) > club_idx else ""
+            dob = parse_dob(fields[dob_idx]) if dob_idx is not None and len(fields) > dob_idx else None
+            cid = db.club_id(con, club) if club else None
+            pid = db.player_id(con, name, dob=dob, src=src, src_player_id=fields[0].strip() or None, grade_uid=True)
+            sid = db.save_snapshot(con, pid=pid, src=src, fmv=fmv, cid=cid,
                                    snapshot_date=date, attrs=attrs, meta={})
             if sid:
                 saved += 1
@@ -138,6 +154,7 @@ def load_edition(con, csv_path, game, db_version, date, known):
 
 def main():
     con = db.connect()
+    con.execute("PRAGMA synchronous=NORMAL")   # WAL + NORMAL: cheap writes (no per-row fsync). Single writer.
     if "--reset" in sys.argv:
         s = con.execute("SELECT source_id FROM source WHERE name='kaggle'").fetchone()
         if s:

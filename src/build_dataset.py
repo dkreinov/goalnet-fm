@@ -22,9 +22,9 @@ def load_snapshots(con):
     """player_id -> sorted list of (date, snapshot_id, source_name, ca, pa, fm_version_id)."""
     snaps = defaultdict(list)
     for r in con.execute(
-            "SELECT ps.player_id, ps.snapshot_date, ps.snapshot_id, s.name, ps.ca, ps.pa, ps.fm_version_id "
+            "SELECT ps.player_id, ps.snapshot_date, ps.snapshot_id, s.name, ps.ca, ps.pa, ps.fm_version_id, ps.club_id "
             "FROM player_snapshot ps JOIN source s USING(source_id)"):
-        snaps[r[0]].append((r[1], r[2], r[3], r[4], r[5], r[6]))
+        snaps[r[0]].append((r[1], r[2], r[3], r[4], r[5], r[6], r[7]))
     for v in snaps.values():
         v.sort()
     return snaps
@@ -96,6 +96,10 @@ def resolve(pid, pname_norm, club_id_, has_snap, idx):
         cands = list(cands)
         if len(cands) == 1:
             return cands[0]
+        # NOTE: a bridge-aware club check here (ESPN->grade via eclub_to_g) was tried and REGRESSED readiness
+        # (54%->53%, EPL gap 7->182): in the fallback layer it mis-picks among same-name candidates and
+        # displaces correct roster resolutions. Keep the strict raw-id check (effectively unique-name only);
+        # club disambiguation of common names belongs in build_xwalk's test-gated name+squad pass.
         at_club = [c for c in cands if club_id_ in PLAYER_CLUBS.get(c, ())]
         return at_club[0] if len(at_club) == 1 else None
 
@@ -179,10 +183,17 @@ def elo_and_form(matches):
 
 def load_xwalk(con):
     """lineup player_id -> (tuple of FM grade player_ids, confidence) via player_xwalk.
-    Only single-ESPN-id players resolve through the crosswalk; collision-merged players
-    (>=2 ESPN ids) and unmatched ones return nothing here and fall back to name-resolve."""
+
+    ESPN lineups were loaded through the same norm_name merge as the (now-fixed) grade side, so one
+    internal player_id can carry several ESPN ids (famous common names: Ederson, E.Martínez, Suárez).
+    The crosswalk keys on ESPN id, so each id resolves on its own. We recover these read-side (without
+    touching match_player):
+      - all ESPN ids of a pid -> the SAME graded UID  => resolve directly (one real person, many ids)
+      - ESPN ids -> DIFFERENT graded UIDs             => return as a COLLISION, disambiguated per
+        lineup appearance by club in the match loop (see load_espn_bridge / the loop).
+    Returns (out, collisions): out[pid]=(grade_pids, conf); collisions[pid]={uid: grade_pids}."""
     if not con.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='player_xwalk'").fetchone():
-        return {}
+        return {}, {}
     espn_sid = con.execute("SELECT source_id FROM source WHERE name='espn'").fetchone()[0]
     pid_eids = defaultdict(list)
     for eid, pid in con.execute(
@@ -197,14 +208,49 @@ def load_xwalk(con):
         for uid, pid in con.execute(
                 "SELECT source_player_id, player_id FROM player_source_id WHERE source_id=?", (sid,)):
             uid_pids[uid].add(pid)
+    CONF_RANK = {"confirmed": 3, "high": 2, "medium": 1}
     out = {}
+    collisions = {}
     for pid, eids in pid_eids.items():
-        if len(eids) != 1:
+        # each ESPN id -> its graded UID (keep best confidence seen per UID)
+        uid_conf = {}
+        for e in eids:
+            u, c = xw.get(e, (None, None))
+            if u and uid_pids.get(u):
+                if u not in uid_conf or CONF_RANK.get(c, 0) > CONF_RANK.get(uid_conf[u], 0):
+                    uid_conf[u] = c
+        if not uid_conf:
             continue
-        fm_uid, conf = xw.get(eids[0], (None, None))
-        if fm_uid and uid_pids.get(fm_uid):
-            out[pid] = (tuple(sorted(uid_pids[fm_uid])), conf)
-    return out
+        if len(uid_conf) == 1:
+            u, c = next(iter(uid_conf.items()))
+            out[pid] = (tuple(sorted(uid_pids[u])), c)
+        else:
+            collisions[pid] = {u: tuple(sorted(uid_pids[u])) for u in uid_conf}
+    return out, collisions
+
+
+def load_espn_bridge(con, xwalk):
+    """ESPN club_id -> set of FM grade club_ids, learned from the already-resolved single-UID links
+    (their lineup clubs vs their UID's grade clubs). Used to club-disambiguate ESPN-collision players.
+    Also returns gpid_clubs: grade player_id -> set of grade club_ids."""
+    gpid_clubs = defaultdict(set)
+    for pid, cid in con.execute("SELECT player_id, club_id FROM player_snapshot WHERE club_id IS NOT NULL"):
+        gpid_clubs[pid].add(cid)
+    pid_match_clubs = defaultdict(set)
+    for pid, cid in con.execute("SELECT DISTINCT player_id, club_id FROM match_player"):
+        pid_match_clubs[pid].add(cid)
+    from collections import Counter
+    eclub_gc = defaultdict(Counter)
+    for pid, (gps, conf) in xwalk.items():
+        if conf not in ("confirmed", "high"):
+            continue
+        gclubs = set().union(*(gpid_clubs[g] for g in gps)) if gps else set()
+        for ec in pid_match_clubs.get(pid, ()):
+            for gc in gclubs:
+                eclub_gc[ec][gc] += 1
+    eclub_to_g = {ec: ({c for c, n in cnt.items() if n >= 2} or {cnt.most_common(1)[0][0]})
+                  for ec, cnt in eclub_gc.items()}
+    return eclub_to_g, gpid_clubs
 
 
 def load_roster(con):
@@ -224,6 +270,47 @@ def load_roster(con):
     return rmap, uid_pids
 
 
+def load_club_attrs(con):
+    """(grade_club_id, fm_version_id) -> {attr_name: value}; empty if scrape_clubs hasn't run."""
+    if not con.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='club_attribute'").fetchone():
+        return {}
+    out = defaultdict(dict)
+    for cid, fmv, an, av in con.execute(
+            "SELECT club_id, fm_version_id, attr_name, attr_value FROM club_attribute WHERE attr_value IS NOT NULL"):
+        out[(cid, fmv)][an] = av
+    return out
+
+
+def load_dob(con):
+    """ESPN lineup player_id -> dob (ISO), via ESPN identity, else the crosswalked FM uid's dob."""
+    espn_sid = con.execute("SELECT source_id FROM source WHERE name='espn'").fetchone()[0]
+    eid_dob = {e: d for e, d in con.execute(
+        f"SELECT source_player_id, dob FROM source_identity WHERE source_id={espn_sid} AND dob IS NOT NULL")}
+    fm_dob = {u: d for u, d in con.execute(
+        "SELECT source_player_id, dob FROM source_identity WHERE source_id="
+        "(SELECT source_id FROM source WHERE name='fm-uid') AND dob IS NOT NULL")}
+    xw_uid = {}
+    if con.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='player_xwalk'").fetchone():
+        xw_uid = {e: u for e, u in con.execute(
+            "SELECT espn_player_id, fm_uid FROM player_xwalk WHERE fm_uid IS NOT NULL")}
+    pid_dob = {}
+    for eid, pid in con.execute(
+            "SELECT source_player_id, player_id FROM player_source_id WHERE source_id=?", (espn_sid,)):
+        d = eid_dob.get(eid) or fm_dob.get(xw_uid.get(eid))
+        if d:
+            pid_dob[pid] = d
+    return pid_dob
+
+
+def _age(dob, on_date):
+    try:
+        from datetime import date
+        a = date.fromisoformat(dob[:10]); b = date.fromisoformat(on_date[:10])
+        return (b - a).days / 365.25
+    except Exception:
+        return None
+
+
 SEASON_END = {"2020-21": "2021-06-30", "2021-22": "2022-06-30", "2022-23": "2023-06-30",
               "2023-24": "2024-06-30", "2024-25": "2025-06-30", "2025-26": "2026-06-30"}
 
@@ -236,8 +323,11 @@ def main():
     attrs = load_attrs(con)
     idx, has_snap = name_index(con)
     build_fallback(idx, con)
-    xwalk = load_xwalk(con)
+    xwalk, collisions = load_xwalk(con)
+    eclub_to_g, gpid_clubs = load_espn_bridge(con, xwalk)
     roster, ruid_pids = load_roster(con)
+    clubattr = load_club_attrs(con)
+    pid_dob = load_dob(con)
     sfmv = season_fmv(con)
     print(f"snapshot players: {len(snaps)}, name index: {len(idx)}, xwalk links: {len(xwalk)}, "
           f"roster links: {len(roster)}, season->fmv: {sfmv}")
@@ -273,17 +363,13 @@ def main():
         mrow = con.execute("SELECT b365h, b365d, b365a, xg_home, xg_away FROM match WHERE match_id=?",
                            (mid,)).fetchone()
         row.update({"b365h": mrow[0], "b365d": mrow[1], "b365a": mrow[2]})
-        # full-squad strength per side (depth beyond the starting XI), from this season's FM db
-        for side, cid in (("home", hcid), ("away", acid)):
-            sq = squad.get((cid, target_fmv), {})
-            for k in ("squad_ca_mean", "squad_ca_max", "squad_ca_top11", "squad_size",
-                      "squad_value_total"):
-                row[f"{side}_{k}"] = sq.get(k)
         ok = True
         for side, cid in (("home", hcid), ("away", acid)):
             xi = lineups.get((mid, cid), [])
             grp_vals = defaultdict(list)
             cas, pas = [], []
+            ages = []
+            gclubs = defaultdict(int)   # grade-club_id votes (bridge ESPN club -> FM grade club)
             n_matched = 0
             conf_counts = defaultdict(int)
             for pid, pos in xi:
@@ -298,6 +384,18 @@ def main():
                         union.extend(snaps.get(p, []))
                     union.sort()
                     snap = pick_snapshot(union, target_fmv, season_end)
+                if snap is None and pid in collisions:    # ESPN-merged common name: pick UID by club
+                    bridged = eclub_to_g.get(cid, set())
+                    cand = [(u, gps_) for u, gps_ in collisions[pid].items()
+                            if bridged and any(gpid_clubs.get(g, set()) & bridged for g in gps_)]
+                    if len(cand) == 1:
+                        gps = cand[0][1]
+                        union = []
+                        for p in gps:
+                            union.extend(snaps.get(p, []))
+                        union.sort()
+                        snap = pick_snapshot(union, target_fmv, season_end)
+                        conf = "high" if snap is not None else None
                 if snap is None:                          # fallback: legacy name-resolve (no coverage loss)
                     rpid = resolve(pid, pname.get(pid, ""), cid, has_snap, idx)
                     snap = pick_snapshot(snaps.get(rpid, []), target_fmv, season_end) if rpid else None
@@ -321,7 +419,12 @@ def main():
                 conf_tally[conf] += 1
                 n_matched += 1
                 matched_starters += 1
-                _, sid, _, ca, pa, _ = snap
+                _, sid, _, ca, pa, gfmv, gclub = snap
+                if gclub:
+                    gclubs[(gclub, gfmv)] += 1
+                ag_ = _age(pid_dob.get(pid), date) if pid in pid_dob else None
+                if ag_:
+                    ages.append(ag_)
                 if ca:
                     cas.append(ca)
                 if pa:
@@ -338,6 +441,16 @@ def main():
             row[f"{side}_n_roster_medium"] = conf_counts.get("roster_medium", 0)
             row[f"{side}_ca_mean"] = sum(cas) / len(cas) if cas else None
             row[f"{side}_pa_mean"] = sum(pas) / len(pas) if pas else None
+            row[f"{side}_age_mean"] = sum(ages) / len(ages) if ages else None
+            # bridge ESPN club -> dominant (FM grade-club, edition) from resolved starters,
+            # then attach full-squad strength + reputation keyed on that same (club, edition).
+            gkey = max(gclubs, key=gclubs.get) if gclubs else None
+            sq = squad.get(gkey, {}) if gkey else {}
+            for k in ("squad_ca_mean", "squad_ca_max", "squad_ca_top11", "squad_size", "squad_value_total"):
+                row[f"{side}_{k}"] = sq.get(k)
+            ca_attr = clubattr.get(gkey, {}) if gkey else {}
+            for k in ("reputation", "training_facilities", "youth_facilities", "youth_recruitment"):
+                row[f"{side}_club_{k}"] = ca_attr.get(k)
             for pg in ("GK", "DEF", "MID", "ATT", "ALL"):
                 for cat in ATTR_GROUPS:
                     v = grp_vals.get((pg, cat))

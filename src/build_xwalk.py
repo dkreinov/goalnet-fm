@@ -43,6 +43,22 @@ def xnorm(s):
     return db.norm((s or "").translate(_TRANSLIT))
 
 
+def posbucket(p):
+    """Coarse ESPN/FM position bucket, for breaking same-name same-club ties (a GK vs an outfielder)."""
+    if not p:
+        return "?"
+    p = p.upper()
+    if p.startswith("G"):
+        return "GK"
+    if p[0] == "D" or p in ("CB", "LB", "RB", "RWB", "LWB"):
+        return "DEF"
+    if p[0] == "M" or p in ("DM", "AM", "CM", "LM", "RM"):
+        return "MID"
+    if p[0] in ("F", "W", "S") or p in ("ST", "CF", "LW", "RW"):
+        return "ATT"
+    return "?"
+
+
 def main():
     con = db.connect()
     espn_sid = con.execute("SELECT source_id FROM source WHERE name='espn'").fetchone()[0]
@@ -153,7 +169,13 @@ def main():
                 if dob_close(edob, fm_dob[u]):
                     uid, conf, method = u, "confirmed", "name+dob"
                 else:
-                    uid, conf, method = None, "unmatched", "name_dob_conflict"
+                    # Globally-unique FM name but the DOBs differ. ESPN DOBs are frequently wrong by
+                    # days/months/years (Giovanni Simeone, Janni Serra, Kevin Paredes all = real same
+                    # player, noisy DOB). A unique name is strong evidence on its own — link as 'high'
+                    # (NOT 'confirmed', so the DOB-consistency authenticity test is unaffected) rather
+                    # than discarding the player. Two distinct real footballers sharing a globally-unique
+                    # full name AND both present in our ESPN+FM data is vanishingly unlikely.
+                    uid, conf, method = u, "high", "name_unique_dob_differs"
             else:
                 uid, conf, method = u, "high", "name_unique"
         elif len(cands) >= 2:
@@ -204,36 +226,135 @@ def main():
     # --- club-season squad disambiguation: the existing name+club tier compares ESPN club_ids to FM
     # grade club_ids (different id-spaces), so it rarely fires. Build a bridge ESPN club -> FM grade-club
     # from the already-confirmed/high links, then resolve 'ambiguous' shared names by which candidate is
-    # actually in the player's club squad. Within a club a name is almost always unique. ---
-    eclub_gc = defaultdict(Counter)
-    for eid, pid, uid, fpid, conf, method in rows:
-        if uid and conf in ("confirmed", "high"):
-            for ec in pid_match_clubs.get(pid, ()):
-                for gc in fm_clubs.get(uid, ()):
-                    eclub_gc[ec][gc] += 1
-    eclub_to_g = {ec: ({c for c, n in cnt.items() if n >= 2} or {cnt.most_common(1)[0][0]})
-                  for ec, cnt in eclub_gc.items()}
-    upgraded = 0
+    # actually in the player's club squad. Within a club a name is almost always unique.
+    # ITERATIVE: in weakly-seeded leagues (Brazil/Portugal: sparse/wrong ESPN DOBs -> few confirmed seeds)
+    # one pass barely fires. Each round of newly-confirmed links seeds MORE bridge, enabling the next round,
+    # so the disambiguation cascades. Still club-guarded + unique-candidate + DOB-safe + test_xwalk-gated. ---
+    # position buckets for breaking cmatch>1 ties safely (same name + same club + a GK vs an outfielder)
+    espn_pos_cnt = defaultdict(Counter)
+    for ppid, pos in con.execute("SELECT player_id, position FROM match_player WHERE position IS NOT NULL"):
+        espn_pos_cnt[ppid][posbucket(pos)] += 1
+    espn_posb = {p: c.most_common(1)[0][0] for p, c in espn_pos_cnt.items()}
+    snap_pos_cnt = defaultdict(Counter)
+    for ppid, pos in con.execute("SELECT player_id, position FROM player_snapshot WHERE position IS NOT NULL"):
+        snap_pos_cnt[ppid][posbucket(pos)] += 1
+    uid_posb = {}
+    for u, pids in uid_to_gradepids.items():
+        c = Counter()
+        for p in pids:
+            c += snap_pos_cnt.get(p, Counter())
+        if c:
+            uid_posb[u] = {b for b, _ in c.most_common(2)}   # FM lists up to 2 main buckets
+
+    def build_bridge():
+        eclub_gc = defaultdict(Counter)
+        for eid, pid, uid, fpid, conf, method in rows:
+            if uid and conf in ("confirmed", "high"):
+                for ec in pid_match_clubs.get(pid, ()):
+                    for gc in fm_clubs.get(uid, ()):
+                        eclub_gc[ec][gc] += 1
+        return {ec: ({c for c, n in cnt.items() if n >= 2} or {cnt.most_common(1)[0][0]})
+                for ec, cnt in eclub_gc.items()}
+
+    total_upgraded = 0
+    eclub_to_g = {}
+    for _round in range(12):
+        eclub_to_g = build_bridge()
+        upgraded = 0
+        for i, (eid, pid, uid, fpid, conf, method) in enumerate(rows):
+            if uid is not None or conf != "ambiguous":
+                continue
+            cands = name_to_uids.get(xnorm(espn_name_si.get(eid) or pid_name.get(pid) or ""), [])
+            if len(cands) < 2:
+                continue
+            bridged = set()
+            for ec in pid_match_clubs.get(pid, set()):
+                bridged |= eclub_to_g.get(ec, set())
+            cmatch = [u for u in cands if fm_clubs.get(u, set()) & bridged]
+            if not cmatch:
+                continue
+            method2 = "name+squad"
+            if len(cmatch) > 1:
+                # several same-name players bridge to this club -> break the tie by DOB, then position;
+                # if neither isolates exactly one candidate, leave it ambiguous (never guess).
+                edob = espn_dob.get(eid)
+                dm = [u for u in cmatch if edob and fm_dob.get(u) and dob_close(edob, fm_dob[u])]
+                if len(dm) == 1:
+                    cmatch = dm
+                else:
+                    epb = espn_posb.get(pid)
+                    pm = [u for u in cmatch if epb and epb != "?" and epb in uid_posb.get(u, set())]
+                    if len(pm) == 1:
+                        cmatch, method2 = pm, "name+squad+pos"
+                    else:
+                        continue
+            u = cmatch[0]
+            edob = espn_dob.get(eid)
+            if edob and fm_dob.get(u) and not dob_close(edob, fm_dob[u]):   # keep DOB safety
+                continue
+            fp = sorted(uid_to_gradepids[u])[0] if uid_to_gradepids.get(u) else None
+            rows[i] = (eid, pid, u, fp, "high", method2)
+            tiers["ambiguous"] -= 1; tiers["high"] += 1; upgraded += 1
+        total_upgraded += upgraded
+        if upgraded == 0:
+            break
+    eclub_to_g = build_bridge()   # final bridge for the fuzzy pass below
+    print(f"club-squad disambiguation: upgraded {total_upgraded:,} ambiguous -> high (iterative, {_round+1} rounds)")
+
+    # --- club-anchored fuzzy/alias pass: for ESPN starters STILL unmatched/ambiguous, restrict to the
+    # bridged club's grade squad and accept a SINGLE close fuzzy/alias name match. Club-first is what makes
+    # fuzzy safe — within one squad a near-name is almost always the same person (typos, mononyms, name
+    # changes, hyphenation: "Manafá"->"Wilson Manafá", "Tomás Carbonell"). Linked 'high'/'fuzzy+club' (never
+    # 'confirmed'); the squad restriction IS the authenticity guard. Requires exactly one squad member to
+    # clear the ratio threshold, else skip (never guess between two similar names in a squad). ---
+    import difflib
+    gradeclub_uids = defaultdict(set)
+    for guid, gclubs in fm_clubs.items():
+        if uid_to_gradepids.get(guid):
+            for gc in gclubs:
+                gradeclub_uids[gc].add(guid)
+
+    def _squad_names(u):
+        ns = {xnorm(fm_formal.get(u, ""))}
+        for p in uid_to_gradepids.get(u, ()):
+            ns.add(xnorm(pid_name.get(p, "")))
+        return {n for n in ns if n}
+
+    fuzzy_up = 0
     for i, (eid, pid, uid, fpid, conf, method) in enumerate(rows):
-        if uid is not None or conf != "ambiguous":
+        if uid is not None or conf not in ("ambiguous", "unmatched"):
             continue
-        cands = name_to_uids.get(xnorm(espn_name_si.get(eid) or pid_name.get(pid) or ""), [])
-        if len(cands) < 2:
+        nn = xnorm(espn_name_si.get(eid) or pid_name.get(pid) or "")
+        if len(nn) < 4:
             continue
         bridged = set()
         for ec in pid_match_clubs.get(pid, set()):
             bridged |= eclub_to_g.get(ec, set())
-        cmatch = [u for u in cands if fm_clubs.get(u, set()) & bridged]
-        if len(cmatch) != 1:
+        if not bridged:
             continue
-        u = cmatch[0]
-        edob = espn_dob.get(eid)
-        if edob and fm_dob.get(u) and not dob_close(edob, fm_dob[u]):   # keep DOB safety
+        # pre-filter: only squad members sharing a distinctive (>=4 char) token with the ESPN name are
+        # plausible fuzzy matches -> reuse the global tok_to_uids index, then difflib only those (fast).
+        tokcand = set()
+        for t in nn.split():
+            if len(t) >= 4:
+                tokcand |= tok_to_uids.get(t, set())
+        if not tokcand:
             continue
+        squad = set().union(*(gradeclub_uids.get(gc, set()) for gc in bridged)) if bridged else set()
+        cand_pool = tokcand & squad
+        scored = []
+        for u in cand_pool:
+            best = max((difflib.SequenceMatcher(None, nn, un).ratio() for un in _squad_names(u)), default=0.0)
+            if best >= 0.82:
+                scored.append((best, u))
+        cand_uids = {u for _, u in scored}
+        if len(cand_uids) != 1:
+            continue
+        u = next(iter(cand_uids))
         fp = sorted(uid_to_gradepids[u])[0] if uid_to_gradepids.get(u) else None
-        rows[i] = (eid, pid, u, fp, "high", "name+squad")
-        tiers["ambiguous"] -= 1; tiers["high"] += 1; upgraded += 1
-    print(f"club-squad disambiguation: upgraded {upgraded:,} ambiguous -> high")
+        rows[i] = (eid, pid, u, fp, "high", "fuzzy+club")
+        tiers[conf] -= 1; tiers["high"] += 1; fuzzy_up += 1
+    print(f"fuzzy+club alias pass: recovered {fuzzy_up:,} unmatched/ambiguous -> high")
 
     con.executemany(
         "INSERT INTO player_xwalk (espn_player_id, espn_player_pid, fm_uid, fm_player_id, confidence, method) "

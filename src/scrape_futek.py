@@ -158,7 +158,7 @@ def main():
                 dbmod.log(con, "futek", uid, "skip", "no attrs")
                 continue
             name = rec["meta"].get("player_name") or row["name"]
-            pid = dbmod.player_id(con, name, src=src, src_player_id=uid)
+            pid = dbmod.player_id(con, name, src=src, src_player_id=uid, grade_uid=True)
             cid = dbmod.club_id(con, rec["meta"].get("club") or row["club"])
             ca = int(rec["meta"].get("current_ability") or row["ca"] or 0) or None
             pa = int(rec["meta"].get("potential_ability") or row["pa"] or 0) or None

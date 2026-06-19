@@ -153,7 +153,7 @@ def _save_parsed(con, src, fmv, snapshot_date, uid, pu, p, counts):
         counts[2] += 1
         dbmod.log(con, "fminside", pu, "skip", "no attrs parsed")
         return
-    pid = dbmod.player_id(con, p["name"], src=src, src_player_id=uid)
+    pid = dbmod.player_id(con, p["name"], src=src, src_player_id=uid, grade_uid=True)
     cid = dbmod.club_id(con, p["club"]) if p["club"] else None
     sid = dbmod.save_snapshot(
         con, pid=pid, src=src, fmv=fmv, cid=cid, snapshot_date=snapshot_date,

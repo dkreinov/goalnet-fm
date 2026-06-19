@@ -15,6 +15,26 @@ Discovered 2026-06-17 via `src/audit_simple.py`.
 - FIX (when prioritized): debug `scrape_clubs.club_urls()`/`parse_club` per non-English league (print enumerated club
   names per league); ensure distinct club_ids; re-scrape; then verify `audit_simple.py` shows reputation >~80%.
 
+## RESOLVED 2026-06-18: grade-player name-merge + the true-11v11 identity work
+The "identity vs grade records disconnected" investigation below was the symptom of a deeper bug, now FIXED:
+`db.player_id` merged DISTINCT real players sharing a normalized name onto one player_id. Fixed by re-keying
+grade-players by the FM game-UID (`db.player_id(grade_uid=True)`, offline reload via `reload_grades.py`), plus
+an ESPN-side collision fix + DOB-gate fix + club-anchored fuzzy/alias matcher in build_xwalk/build_dataset.
+Outcome: TRUE-11v11 readiness 59%(false/poisoned) -> 46% (CORRECT, clean), coverage 93.4%, test_xwalk 8/8.
+See memory `fm-ratings-project.md` for the full chain. Backup of the pre-fix DB at `data/fm.db.bak`.
+
+## DATA FLOOR (measured 2026-06-18, Plan 2 sample -> STOPPED): true-11v11 is ~data-bound at 46%
+The matching levers are exhausted (coverage 93.4%). The residual uncovered starters are GENUINELY not in our
+FM grade data: 1,180 players / ~12,900 appearances with no FM name match at all. `src/scrape_absent.py
+--worklist` shows they are dominated by QUALITY-EXCLUDED leagues (China/India/South Africa/Peru/Japan/Paraguay):
+only 819 players / 4,474 apps fall in INCLUDED leagues, and those are mostly lower English tiers (Championship/
+L1/L2: Cheyenne Dunkley, Sam Edmundson) + Saudi/Portugal — thin, spread across many matches (<1pp readiness if
+recovered). A targeted fminside name-search scrape was prototyped (`scrape_absent.py --probe`) but the
+player-table endpoint ignored the name filter (returned unrelated players) -> needs endpoint reverse-engineering
+for an uncertain, modest payoff. DECISION: not worth it now; 46% is the honest floor on current FM-grade coverage.
+To raise it = collect MORE FM grades (scrape thin-coverage included-league clubs), NOT more matching. Plan file
+`plans/plan-20260618-scrape-absent.md` documents the scrape design if revisited.
+
 ## INVESTIGATE: identity (DOB) records vs grade records disconnected for common names
 Discovered 2026-06-17 while tracing the top unmatched starter "João Pedro" (490 starts, ESPN clubs Watford/Cagliari/Grêmio).
 - `source_identity` (source 'fm-uid') has 43 entries named "João Pedro" (name+DOB from the kaggle identity extract).

@@ -85,9 +85,19 @@ def add_club_alias(con, alias: str, canonical: str) -> None:
     con.execute("INSERT OR REPLACE INTO club_alias (alias, club_id) VALUES (?,?)", (norm(alias), cid))
 
 
+GRADE_SOURCES = ("fminside", "kaggle", "futek")
+
+
 def player_id(con, name: str, dob: str | None = None, nationality: str | None = None,
-              src: int | None = None, src_player_id: str | None = None) -> int:
-    """Resolve player: prefer source id mapping, then (norm_name, dob), then norm_name alone."""
+              src: int | None = None, src_player_id: str | None = None,
+              grade_uid: bool = False) -> int:
+    """Resolve player: prefer source id mapping, then (norm_name, dob), then norm_name alone.
+
+    grade_uid=True (fminside/kaggle/futek): identity is the FM game-UID, NOT the name. The FM-UID is
+    shared across grade sources (Salah=98028755 everywhere), so reuse the grade player already created
+    for this UID by ANY grade source; otherwise INSERT a brand-new player keyed purely by the UID and
+    NEVER fall through to the norm_name merge. The norm_name fallback used to pool distinct real people
+    who happen to share a common name (e.g. 4 different "João Pedro"s) onto one player_id."""
     if src is not None and src_player_id is not None:
         row = con.execute(
             "SELECT player_id FROM player_source_id WHERE source_id=? AND source_player_id=?",
@@ -95,6 +105,33 @@ def player_id(con, name: str, dob: str | None = None, nationality: str | None = 
         ).fetchone()
         if row:
             return row[0]
+        if grade_uid:
+            row = con.execute(
+                "SELECT ps.player_id FROM player_source_id ps JOIN source s ON s.source_id=ps.source_id "
+                f"WHERE s.name IN ({','.join('?'*len(GRADE_SOURCES))}) AND ps.source_player_id=?",
+                (*GRADE_SOURCES, str(src_player_id)),
+            ).fetchone()
+            if row:
+                pid = row[0]
+            else:
+                try:
+                    cur = con.execute(
+                        "INSERT INTO player (name, norm_name, dob, nationality) VALUES (?,?,?,?)",
+                        (name, norm(name), dob, nationality),
+                    )
+                    pid = cur.lastrowid
+                except sqlite3.IntegrityError:
+                    # UNIQUE(norm_name, dob): a player with this EXACT name+birthdate already exists.
+                    # Same name AND same DOB is almost certainly the same real person (or a dup), so reuse
+                    # it rather than crash — far safer than the name-only merge we removed (DOB confirms it).
+                    pid = con.execute(
+                        "SELECT player_id FROM player WHERE norm_name=? AND dob IS ?", (norm(name), dob)
+                    ).fetchone()[0]
+            con.execute(
+                "INSERT OR IGNORE INTO player_source_id (source_id, source_player_id, player_id) VALUES (?,?,?)",
+                (src, str(src_player_id), pid),
+            )
+            return pid
     n = norm(name)
     if dob:
         row = con.execute("SELECT player_id FROM player WHERE norm_name=? AND dob=?", (n, dob)).fetchone()
