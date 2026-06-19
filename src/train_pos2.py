@@ -76,17 +76,20 @@ class Encoder(nn.Module):
 
 
 class PosNet(nn.Module):
-    def __init__(self, A, arch, d=64, h=128, p=0.3):
+    def __init__(self, A, arch, d=64, h=128, p=0.3, nctx=0):
         super().__init__()
         self.enc = Encoder(A, arch, d, h, p)
         self.diff = (arch == "diff")
-        feat = 4 * h + 1 if self.diff else 2 * h + 1
+        self.nctx = nctx
+        feat = (4 * h + 1 if self.diff else 2 * h + 1) + nctx
         self.head = nn.Sequential(nn.Linear(feat, h), nn.ReLU(), nn.Dropout(p), nn.Linear(h, 3))
 
-    def forward(self, Xh, Rh, Xa, Ra):
+    def forward(self, Xh, Rh, Xa, Ra, C=None):
         h = self.enc(Xh, Rh); a = self.enc(Xa, Ra)
         adv = torch.ones(h.size(0), 1, device=h.device)
         z = torch.cat([h - a, h * a, h, a, adv], -1) if self.diff else torch.cat([h, a, adv], -1)
+        if self.nctx:
+            z = torch.cat([z, C], -1)
         return self.head(z)
 
 
@@ -103,8 +106,20 @@ def main():
     Xh, Xa = z["Xh"], z["Xa"]
     Rh, Ra = z["Rh"].astype(np.int64), z["Ra"].astype(np.int64)
     y, dates = z["y"].astype(np.int64), z["dates"]
+    mids = z["mids"]
     A = Xh.shape[2]
     print(f"matches {len(y):,}  attrs {A}  H/D/A={np.bincount(y)/len(y)}", flush=True)
+
+    use_ctx = "--ctx" in sys.argv
+    CTX = None; nctx = 0
+    if use_ctx:
+        cz = np.load(ROOT / "data" / "context.npz")
+        cctx, cmids = cz["ctx"], cz["mids"]          # materialize once (NpzFile indexing is lazy)
+        cmap = {int(m): cctx[i] for i, m in enumerate(cmids)}
+        nctx = cctx.shape[1]
+        CTX = np.stack([cmap.get(int(m), np.zeros(nctx, np.float32)) for m in mids]).astype(np.float32)
+        miss = sum(int(m) not in cmap for m in mids)
+        print(f"ctx: {nctx} features, {miss} matches missing context", flush=True)
 
     tr = dates < np.datetime64("2024-08-01")
     va = (dates >= np.datetime64("2024-08-01")) & (dates < np.datetime64("2025-08-01"))
@@ -113,6 +128,9 @@ def main():
 
     mu = Xh[tr].reshape(-1, A).mean(0); sd = Xh[tr].reshape(-1, A).std(0) + 1e-6
     Xh = ((Xh - mu) / sd).astype(np.float32); Xa = ((Xa - mu) / sd).astype(np.float32)
+    if use_ctx:
+        cmu = CTX[tr].mean(0); csd = CTX[tr].std(0) + 1e-6
+        CTX = ((CTX - cmu) / csd).astype(np.float32)
 
     _TT = {np.dtype("float32"): torch.float32, np.dtype("int64"): torch.int64}
     def T(a):
@@ -124,19 +142,22 @@ def main():
     Xhtr, Rhtr, Xatr, Ratr, ytr = pack(tr)
     Vh, Vrh, Va, Vra, _ = pack(va)
     Eh, Erh, Ea, Era, _ = pack(te)
+    Ctr = T(CTX[tr]) if use_ctx else None
+    Cva = T(CTX[va]) if use_ctx else None
+    Cte = T(CTX[te]) if use_ctx else None
 
     prior = np.bincount(y[tr], minlength=3) / tr.sum()
     print("baseline:")
     report("majority/prior (test)", y[te], np.tile(prior, (te.sum(), 1)))
 
-    def proba(net, Xh_, Rh_, Xa_, Ra_):
+    def proba(net, Xh_, Rh_, Xa_, Ra_, C_=None):
         net.eval()
         with torch.no_grad():
-            return tonp(torch.softmax(net(Xh_, Rh_, Xa_, Ra_), 1))
+            return tonp(torch.softmax(net(Xh_, Rh_, Xa_, Ra_, C_), 1))
 
     def train_one(arch, seed):
         torch.manual_seed(seed); np.random.seed(seed)
-        net = PosNet(A, arch)
+        net = PosNet(A, arch, nctx=nctx)
         opt = torch.optim.AdamW(net.parameters(), lr=2e-3, weight_decay=1e-4)
         sched = torch.optim.lr_scheduler.CosineAnnealingLR(opt, ep)
         lossf = nn.CrossEntropyLoss()
@@ -147,10 +168,11 @@ def main():
             for i in range(0, n, bs):
                 b = perm[i:i + bs]
                 opt.zero_grad()
-                loss = lossf(net(Xhtr[b], Rhtr[b], Xatr[b], Ratr[b]), ytr[b])
+                Cb = Ctr[b] if use_ctx else None
+                loss = lossf(net(Xhtr[b], Rhtr[b], Xatr[b], Ratr[b], Cb), ytr[b])
                 loss.backward(); opt.step()
             sched.step()
-            r = rps(y[va], proba(net, Vh, Vrh, Va, Vra))
+            r = rps(y[va], proba(net, Vh, Vrh, Va, Vra, Cva))
             if r < best - 1e-4:
                 best, best_state, bad = r, {k: v.clone() for k, v in net.state_dict().items()}, 0
             else:
@@ -167,7 +189,7 @@ def main():
         val_ps, test_ps, val_rs = [], [], []
         for s in range(seeds):
             net, vbest = train_one(arch, 7 + s)
-            pv = proba(net, Vh, Vrh, Va, Vra); pe = proba(net, Eh, Erh, Ea, Era)
+            pv = proba(net, Vh, Vrh, Va, Vra, Cva); pe = proba(net, Eh, Erh, Ea, Era, Cte)
             val_ps.append(pv); test_ps.append(pe); val_rs.append(vbest)
             rt = report(f"{arch} seed{s} (test)", y[te], pe)
             if vbest < best_overall[0]:

@@ -27,10 +27,13 @@ head sees `[h-a, h*a, h, a]`), `xfmr` (2-layer self-attention over the 11, then 
 | mean ensemble (62)            | 0.4824 | 1.0286  | 0.2140 |
 | attn ensemble (62)            | 0.4883 | 1.0281  | 0.2138 |
 | diff ensemble (62)            | 0.4863 | 1.0281  | 0.2140 |
-| **xfmr ensemble (62)**        | 0.4896 | 1.0265  | **0.2132** |
+| xfmr ensemble (62)            | 0.4896 | 1.0265  | 0.2132 |
 | xfmr ensemble (66, +value)    | 0.4858 | 1.0269  | 0.2135 |
+| mean ensemble (62 + Elo/form) | 0.4964 | 1.0181  | 0.2105 |
+| **xfmr ensemble (62 + Elo/form)** | 0.4958 | 1.0173 | **0.2102** |
 
-Ensemble = mean of softmax over the seeds.
+Ensemble = mean of softmax over the seeds. "+ Elo/form" = 6 team-strength context features
+(`data/context.npz` from `src/build_context.py`; `train_pos2.py --ctx`).
 
 ## Findings
 - **xfmr (transformer over the 11) wins**, but barely: all architectures cluster 0.213–0.214. The
@@ -38,11 +41,17 @@ Ensemble = mean of softmax over the seeds.
 - **Seed-ensembling helps** ~0.0006–0.0008 RPS, consistently.
 - **Market value / wage add nothing** (66-feat val improved to 0.2119 but test 0.2135 ≈ flat). The 62
   attrs already encode player quality; the sparse missing-indicators add source-noise.
-- Best model (xfmr, 0.2132) beats majority (0.2288) clearly and sits a bit above the literature pre-match
-  ceiling (~0.205 RPS). Remaining gap is real match-outcome variance, not model capacity.
+- **Team-strength priors are the real lever.** Adding 6 Elo/recent-form context features (computed over
+  all 90k matches, strict no-leakage; `src/build_context.py`) dropped test RPS from 0.2132 → **0.2102**
+  and lifted accuracy 0.490 → **0.496**. Val RPS 0.2079 sits right at the literature pre-match ceiling
+  (~0.205). This is the biggest single jump and confirms the lineup-only model was missing club-level
+  form/quality that the XI attributes don't capture.
+- Architecture barely matters once context is in: mean+ctx 0.2105 ≈ xfmr+ctx 0.2102.
+- Beating majority (0.2288) by ~0.019 RPS; remaining headroom to the ceiling is small.
 
 ## Where the gains likely are (next, not yet done)
-1. **Team-strength priors** the lineup can't see: Elo / recent form / squad-value-from-`club_season_tm`
-   (needs club-id bridging across spaces). This is the standard lever that moves football RPS most.
+1. **Richer context**: squad-value-from-`club_season_tm` (needs club-id bridging), rest-days, xG-based
+   form instead of points, league/competition indicator. Ablate each via `--ctx` harness.
 2. **Calibration** (temperature / Dirichlet) on val — cheap RPS win.
-3. **Stadium / attendance / rest-days** context features (feature-ablation study, per roadmap).
+3. **Persist the ctx scaler** (`cmu`/`csd`/`nctx`) in posnet_best.pt so the +ctx model is reloadable for
+   inference (currently only mu/sd/A saved — fine for the metrics experiment, not yet for serving).
