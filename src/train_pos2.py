@@ -204,8 +204,10 @@ def main():
         print(f"  {arch:6s} mean-seed val_rps={mv:.4f}  ensemble val={rv:.4f}  test={rt:.4f}", flush=True)
 
     vbest, barch, bstate = best_overall
-    torch.save({"state": bstate, "arch": barch, "mu": mu, "sd": sd, "A": A},
-               ROOT / "data" / "posnet_best.pt")
+    ckpt = {"state": bstate, "arch": barch, "mu": mu, "sd": sd, "A": A, "nctx": nctx}
+    if use_ctx:                                   # persist ctx scaler so the +ctx model is reloadable
+        ckpt.update({"cmu": cmu, "csd": csd})
+    torch.save(ckpt, ROOT / "data" / "posnet_best.pt")
     print(f"\nbest single model: arch={barch} val_rps={vbest:.4f} -> data/posnet_best.pt", flush=True)
 
 
