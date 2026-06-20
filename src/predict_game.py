@@ -81,13 +81,29 @@ def main():
         tt = {np.dtype("float32"): torch.float32, np.dtype("int64"): torch.int64}
         return torch.frombuffer(bytearray(a.tobytes()), dtype=tt[a.dtype]).reshape(a.shape)
 
+    # squad rosters (norm surname -> for robust team detection; lineups.json labels can be swapped)
+    rosters = {}
+    for f in (WC / "teams").glob("*.json"):
+        d = json.load(open(f, encoding="utf-8"))
+        rosters[d["team"]["code"]] = set(db.norm(p["name"]).split()[-1] for p in d["players"])
+
+    def detect(xi, a, b):
+        """Which of codes a/b does this XI belong to, by surname overlap with the squad rosters."""
+        sn = [db.norm(p.get("full", "")).split()[-1] for p in xi if p.get("full")]
+        na = sum(s in rosters.get(a, ()) for s in sn); nb = sum(s in rosters.get(b, ()) for s in sn)
+        return a if na >= nb else b
+
     L = json.load(open(WC / "lineups.json", encoding="utf-8"))
     Rz = json.load(open(WC / "results.json", encoding="utf-8"))
     for key in keys:
         gg = L.get(key)
         if not gg:
             print(f"\n{key}: not in lineups.json"); continue
-        hc, ac = key.split("-")
+        ca0, cb0 = key.split("-")
+        hc = detect(gg.get("home_xi", []), ca0, cb0)     # actual team of home_xi (label-swap safe)
+        ac = cb0 if hc == ca0 else ca0
+        if hc != ca0:
+            print(f"  (note: {key} home/away XI were swapped in source data — corrected)")
         Xh, Rh, i1 = side(gg.get("home_xi", [])); Xa, Ra, i2 = side(gg.get("away_xi", []))
         ctx = tg.ctx_vec(natctx.get(teams.get(hc), (tg.BASE, 1, 0)), natctx.get(teams.get(ac), (tg.BASE, 1, 0)))
         Xh = ((Xh - mu) / sd).astype(np.float32); Xa = ((Xa - mu) / sd).astype(np.float32)
