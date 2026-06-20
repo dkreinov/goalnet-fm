@@ -94,21 +94,33 @@ def _enum_once(nat):
     return None if other else []          # None = revert/throttle (retry); [] = genuinely no clubs
 
 
+_SEEN_POOLS = {}     # frozenset(club-ids) -> the nation it legitimately belongs to (stale-pool detector)
+
+
+def _sig(clubs):
+    return frozenset(re.findall(r'/clubs/7-[^/]+/(\d+)-', "".join(clubs)))
+
+
 def enum_clubs(nat, cooldown=420):
-    """Robust club-ID discovery for a nationality: tries name + alternates, and on a db-revert
-    (throttle) does a quiet cooldown and retries. update_filter is the only fragile call and it's
-    used just ONCE per nation here. Returns (club_paths, used_query)."""
+    """Robust club-ID discovery: tries name + alternates; on a db5-revert OR a db7 DEFAULT pool (the same
+    club set already seen for a DIFFERENT nation = throttle) does a quiet cooldown and retries. Only the
+    first nation to legitimately own a club set keeps it. Returns (club_paths, used_query)."""
     tries = [nat] + NAT_ALT.get(nat, [])
     for attempt in range(4):
         for q in tries:
             res = _enum_once(q)
             if res:
+                sig = _sig(res)
+                owner = _SEEN_POOLS.get(sig)
+                if owner and owner != nat:          # identical pool already seen elsewhere = stale default
+                    print(f"    stale pool on '{q}' (same as {owner}; throttle); cooldown {cooldown}s...", flush=True)
+                    time.sleep(cooldown); break
+                _SEEN_POOLS[sig] = nat
                 return res, q
-            if res is None:                 # throttle revert -> cooldown then retry
+            if res is None:                          # db5 revert -> cooldown then retry
                 print(f"    enum revert on '{q}' (throttle); cooldown {cooldown}s...", flush=True)
-                time.sleep(cooldown)
-                break                       # restart the tries after cooldown
-            time.sleep(2)                   # res == [] (no clubs for this string) -> try next alt
+                time.sleep(cooldown); break
+            time.sleep(2)                            # res == [] (no clubs for this string) -> next alt
     return [], nat
 
 
