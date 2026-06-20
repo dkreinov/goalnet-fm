@@ -101,23 +101,32 @@ def _sig(clubs):
     return frozenset(re.findall(r'/clubs/7-[^/]+/(\d+)-', "".join(clubs)))
 
 
+FAST_FAIL = "--fast" in sys.argv     # overnight bursts: fail-fast on throttle, let inter-run gaps rest the host
+
+
 def enum_clubs(nat, cooldown=420):
-    """Robust club-ID discovery: tries name + alternates; on a db5-revert OR a db7 DEFAULT pool (the same
-    club set already seen for a DIFFERENT nation = throttle) does a quiet cooldown and retries. Only the
-    first nation to legitimately own a club set keeps it. Returns (club_paths, used_query)."""
+    """Robust club-ID discovery: tries name + alternates. On a db5-revert OR a db7 DEFAULT pool (same club
+    set already seen for a DIFFERENT nation = throttle): in --fast mode return [] immediately (retry on a
+    later run after a real quiet gap); otherwise quiet-cooldown and retry. Returns (club_paths, used_query)."""
     tries = [nat] + NAT_ALT.get(nat, [])
-    for attempt in range(4):
+    for attempt in range(1 if FAST_FAIL else 4):
         for q in tries:
             res = _enum_once(q)
             if res:
                 sig = _sig(res)
                 owner = _SEEN_POOLS.get(sig)
                 if owner and owner != nat:          # identical pool already seen elsewhere = stale default
+                    if FAST_FAIL:
+                        print(f"    stale pool on '{q}' (throttle) -> skip, retry next run", flush=True)
+                        return [], nat
                     print(f"    stale pool on '{q}' (same as {owner}; throttle); cooldown {cooldown}s...", flush=True)
                     time.sleep(cooldown); break
                 _SEEN_POOLS[sig] = nat
                 return res, q
-            if res is None:                          # db5 revert -> cooldown then retry
+            if res is None:                          # db5 revert
+                if FAST_FAIL:
+                    print(f"    enum revert on '{q}' (throttle) -> skip, retry next run", flush=True)
+                    return [], nat
                 print(f"    enum revert on '{q}' (throttle); cooldown {cooldown}s...", flush=True)
                 time.sleep(cooldown); break
             time.sleep(2)                            # res == [] (no clubs for this string) -> next alt
