@@ -22,3 +22,6 @@ Thumbs.db
 
 # Research scratch samples
 _tmpdata/
+wc_bet_auth.json
+wc_bet_done.json
+wc_bet.log
