@@ -256,6 +256,12 @@ def main():
             sched.step()
         net.eval()
         print("  (full-data model trained)", flush=True)
+        # save checkpoint so prediction is pure inference (no retrain)
+        ckpt = {"state": net.state_dict(), "A": A, "nctx": nctx, "rho": float(best_rho),
+                "mu": mu, "sd": sd, "cmu": cmu, "csd": csd, "attrs": ATTRS,
+                "role_mean": {r: role_mean[r] for r in range(4)}, "W": W}
+        torch.save(ckpt, ROOT / "data" / "goalnet.pt")
+        print("  saved data/goalnet.pt", flush=True)
 
     # ---- score the played WC2026 games ----
     natctx = national_context(con)
