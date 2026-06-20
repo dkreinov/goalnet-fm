@@ -48,6 +48,28 @@ GoalNet (full-data, W=5): **exact=5, correct=14, wrong=13 → 29 pts**, ~3rd on 
 (top 31; YOU/you 19). CAVEAT: 29% of starters imputed (grade coverage incomplete) and these games sit
 in the favourable 2025-26 window — treat 29 as a hopeful-case, not the cross-season expectation.
 
+## Feature-ablation (2026-06-21) — does extra data help? Mostly NO.
+Held-out season 2024-25 (n=11,171), GoalNet, national-weighted. Each feature added to baseline:
+
+| config | acc | rps | pts/g | exact% | natl acc |
+|---|---|---|---|---|---|
+| baseline (4-role) | 0.490 | 0.2113 | 0.709 | 10.9 | 0.547 |
+| + detailed position (9) | 0.484 | 0.2123 | 0.703 | 10.9 | 0.558 |
+| + competition embedding | 0.483 | 0.2117 | 0.698 | 10.7 | 0.537 |
+| + formation embedding | 0.490 | 0.2107 | 0.705 | 10.8 | 0.563 |
+| + metadata (kickoff/attendance) | 0.491 | 0.2109 | 0.711 | 11.0 | 0.526 |
+| **+ attendance auxiliary** | 0.491 | 0.2112 | **0.720** | **11.4** | 0.563 |
+| ALL combined | 0.486 | 0.2117 | 0.710 | 11.2 | 0.568 |
+
+- **Detailed position embedding and competition embedding HURT** — the FM attributes already encode position
+  (a winger's pace/crossing vs a striker's finishing) and the Elo context already encodes league strength.
+- **Formation / metadata: marginal/neutral.**
+- **Attendance-as-auxiliary** is the only positive (pts/g 0.709→0.720, exact 10.9→11.4%) — a mild regulariser —
+  but it's a single-season result and ALL-combined washed back to baseline, so it's not robust. Not adopted.
+- Verdict: the attributes + Elo/form context are near the information ceiling; match metadata adds little.
+  No `round/stage` column exists (match_kind is only league/national), so "final vs group" couldn't be tested.
+  Scripts: `build_player_dataset_pos.py`, `build_meta.py`, `train_enr.py`.
+
 ## FM26 grade coverage (WC2026 squads)
 1,248 players across 48 squads (source: worldcup project). FM26-graded **849/1,248 (68%)** after the
 nationality club-route scrape. ~399 still missing (mostly players based abroad → `--by-club` pass pending).
