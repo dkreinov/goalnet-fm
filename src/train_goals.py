@@ -137,8 +137,10 @@ def main():
     def arg(k, d):
         return sys.argv[sys.argv.index(k) + 1] if k in sys.argv else d
     W = float(arg("--w", "5")); ep = int(arg("--epochs", "150"))
+    npz = arg("--npz", "players_imp.npz")     # default to the 68k imputed set (beats strict 48k)
+    print(f"data={npz}", flush=True)
 
-    z = np.load(ROOT / "data" / "players.npz", allow_pickle=True)
+    z = np.load(ROOT / "data" / npz, allow_pickle=True)
     Xh, Xa = z["Xh"], z["Xa"]; Rh, Ra = z["Rh"].astype(np.int64), z["Ra"].astype(np.int64)
     y, dates, mids = z["y"].astype(np.int64), z["dates"], [int(m) for m in z["mids"]]
     ATTRS = [str(a) for a in z["attrs"]]; A = len(ATTRS); aidx = {n: i for i, n in enumerate(ATTRS)}
