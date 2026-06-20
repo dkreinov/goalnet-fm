@@ -45,15 +45,18 @@ def main():
     for f in (WC / "teams").glob("*.json"):
         t = json.load(open(f, encoding="utf-8"))["team"]
         teams[t["code"]] = name2cid.get(tg.NAME_FIX.get(t["name"], t["name"]))
+    EDRANK = {3: 10, 4: 9, 1: 8, 5: 7, 10: 6, 2: 5, 6: 4, 7: 3, 8: 2, 9: 1}   # FM26 first, else newest
     snap = {}
-    for sid, ca, nm in con.execute("SELECT s.snapshot_id,s.ca,p.norm_name FROM player_snapshot s "
-                                   "JOIN player p ON p.player_id=s.player_id WHERE s.fm_version_id=?", (FMV,)):
-        if nm not in snap or (ca or 0) > snap[nm][1]:
-            snap[nm] = (sid, ca or 0)
+    for sid, fmv, ca, nm in con.execute("SELECT s.snapshot_id,s.fm_version_id,s.ca,p.norm_name "
+                                        "FROM player_snapshot s JOIN player p ON p.player_id=s.player_id"):
+        r = EDRANK.get(fmv, 0); cur = snap.get(nm)
+        if cur is None or r > cur[1] or (r == cur[1] and (ca or 0) > cur[2]):
+            snap[nm] = (sid, r, ca or 0)
+    chosen = set(v[0] for v in snap.values())
     ab = defaultdict(dict)
-    for sid, name, val in con.execute("SELECT a.snapshot_id,a.attr_name,a.attr_value FROM player_attribute a "
-                                      "JOIN player_snapshot s ON s.snapshot_id=a.snapshot_id WHERE s.fm_version_id=?", (FMV,)):
-        ab[sid][name] = val
+    for sid, name, val in con.execute("SELECT snapshot_id,attr_name,attr_value FROM player_attribute"):
+        if sid in chosen:
+            ab[sid][name] = val
 
     def vec_for(full):
         s = snap.get(db.norm(full))
