@@ -8,7 +8,7 @@ trained with Poisson NLL on the real goals (who-won is implied, used only as an 
 At inference we form the full scoreline distribution P(h,a) (double-Poisson + a tunable Dixon-Coles
 low-score/draw correction ρ) and pick the EV-optimal scoreline under the league scoring (exact=3,
 outcome=1). Reports H/D/A acc/RPS + fantasy points on val/test (all & national), and scores the played
-WC2026 games. Usage: python D:/Programming/claude/FM/src/train_goals.py [--w 5] [--epochs 150]
+WC2026 games. Usage: python D:/Programming/claude/FM/src/train_goals.py [--w 15] [--epochs 150]
 """
 import json
 import math
@@ -136,7 +136,7 @@ def ctx_vec(h, a):
 def main():
     def arg(k, d):
         return sys.argv[sys.argv.index(k) + 1] if k in sys.argv else d
-    W = float(arg("--w", "5")); ep = int(arg("--epochs", "150"))
+    W = float(arg("--w", "15")); ep = int(arg("--epochs", "150"))
     npz = arg("--npz", "players_imp.npz")     # default to the 68k imputed set (beats strict 48k)
     print(f"data={npz}", flush=True)
 
