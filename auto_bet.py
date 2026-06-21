@@ -1,27 +1,32 @@
 #!/usr/bin/env python3
-"""Auto-bet the Friends fantasy app from the GoalNet model.
+"""Auto-bet the Friends fantasy app from the GoalNet model — with a fallback so no game is missed.
 
-Every run (called by the WorldCupLineups 10-min task): for each upcoming Friends-app fixture whose
-STARTING LINEUP is confirmed AND kickoff is >65 min away (buffer over the 60-min lock), run the model
-(predict_game.py), take its EV pick, and upsert that scoreline to the app via Supabase REST. Each
-fixture is set once (dedup). Fully headless — refreshes the stored Supabase session each run.
+Called by the WorldCupLineups 10-min task. For each upcoming fixture in the 60–80 min pre-kickoff
+window (start at 80, hard lock at 60):
+  * CONFIRMED lineup is up  -> run GoalNet on the real XI -> set/UPGRADE the pick.
+  * not up yet              -> run GoalNet on each team's PREVIOUS tournament-game XI (fallback)
+                               -> set the pick now, so something is locked in before the deadline.
+When the real lineup later appears (still before lock), the fallback pick is upgraded to it.
+State per fixture: 'fallback' or 'confirmed' (a confirmed pick is final and not re-touched).
 
-Run:  python auto_bet.py            # live
-      python auto_bet.py --dry      # predict + log only, no writes
+Run:  python auto_bet.py           # live
+      python auto_bet.py --dry     # predict + log only, no writes
 """
-import os, sys, json, re, subprocess, urllib.request, datetime
+import os, sys, json, re, subprocess, urllib.request, datetime, unicodedata
 
 FM = os.path.dirname(os.path.abspath(__file__))
 WC = r"D:\Programming\claude\worldcup\team_db"
 AUTH = os.path.join(FM, "wc_bet_auth.json")
-DONE = os.path.join(FM, "wc_bet_done.json")
+STATE = os.path.join(FM, "wc_bet_state.json")   # {fixture_id: 'fallback'|'confirmed'}
 LOG = os.path.join(FM, "wc_bet.log")
+TMPLU = os.path.join(FM, "_tmp_lineups.json")
 PY = sys.executable
 ANON = ("***REMOVED***"
         "***REMOVED***"
         "***REMOVED***")
 BASE = "***REMOVED***"
-MIN_BEFORE = 65   # only act when kickoff is more than this many minutes away
+WINDOW = 80   # start considering a game this many minutes before kickoff
+LOCK = 60     # never write within this many minutes of kickoff (app lock)
 
 def log(m): open(LOG, "a", encoding="utf-8").write(f"{datetime.datetime.now():%Y-%m-%d %H:%M} | {m}\n")
 
@@ -39,20 +44,51 @@ def get_access():
     json.dump(a, open(AUTH, "w"))
     return tok["access_token"], a["user_id"]
 
-def predict(key):
-    """Run predict_game.py for a lineups key -> (modelHome, hs, as, modelAway) or None."""
+def _surn(name):
+    s = unicodedata.normalize("NFKD", name or "")
+    s = "".join(c for c in s if not unicodedata.combining(c)).lower().strip()
+    return s.split()[-1] if s else ""
+
+def load_rosters():
+    import glob
+    R = {}
+    for f in glob.glob(os.path.join(WC, "teams", "*.json")):
+        code = os.path.basename(f)[:-5]
+        try: d = json.load(open(f, encoding="utf-8"))
+        except Exception: continue
+        R[code] = set(_surn(p["name"]) for p in d.get("players", []))
+    return R
+
+def team_prev_xi(code, lu, results, rosters):
+    """That team's XI from its most recent FINISHED tournament game (roster-attributed), or None."""
+    cands = []
+    for k, e in lu.items():
+        if e.get("state") != "finished": continue
+        if code not in k.split("-"): continue
+        hx, ax = e.get("home_xi") or [], e.get("away_xi") or []
+        if len(hx) < 11 or len(ax) < 11: continue
+        cands.append(((results.get(k) or {}).get("kickoff", 0), hx, ax))
+    if not cands: return None
+    cands.sort(reverse=True)
+    _, hx, ax = cands[0]
+    rs = rosters.get(code, set())
+    ov = lambda xi: sum(1 for p in xi if _surn(p.get("full", "")) in rs)
+    return hx if ov(hx) >= ov(ax) else ax
+
+def predict(key, lineups_path=None):
+    cmd = [PY, os.path.join(FM, "src", "predict_game.py"), key]
+    if lineups_path: cmd += ["--lineups", lineups_path]
     try:
-        p = subprocess.run([PY, os.path.join(FM, "src", "predict_game.py"), key],
-                           capture_output=True, text=True, timeout=120, cwd=FM)
+        p = subprocess.run(cmd, capture_output=True, text=True, timeout=120, cwd=FM)
     except Exception:
         return None
     m = re.search(r"EV pick:\s+([A-Z]{3})\s+(\d+)-(\d+)\s+([A-Z]{3})", (p.stdout or "") + (p.stderr or ""))
     return (m.group(1), int(m.group(2)), int(m.group(3)), m.group(4)) if m else None
 
 def main(dry=False):
-    done = set()
-    if os.path.exists(DONE):
-        try: done = set(json.load(open(DONE)))
+    state = {}
+    if os.path.exists(STATE):
+        try: state = json.load(open(STATE))
         except Exception: pass
     try: bearer, uid = get_access()
     except Exception as e:
@@ -60,32 +96,50 @@ def main(dry=False):
     try:
         fx = api(BASE + "/rest/v1/fixtures?select=id,round,kickoff_utc,home_team,away_team,status&order=kickoff_utc.asc", bearer=bearer)
         lu = json.load(open(os.path.join(WC, "lineups.json"), encoding="utf-8"))
+        results = json.load(open(os.path.join(WC, "results.json"), encoding="utf-8"))
     except Exception as e:
         log(f"READ FAILED: {e}"); print("read failed:", e); return
+    rosters = load_rosters()
     now = datetime.datetime.now(datetime.timezone.utc)
     acted = 0
     for f in fx:
         if f.get("status") != "scheduled": continue
         fid = str(f["id"])
-        if fid in done: continue
+        if state.get(fid) == "confirmed": continue                 # already finalised
         try: kodt = datetime.datetime.fromisoformat((f.get("kickoff_utc") or "").replace("Z", "+00:00"))
         except Exception: continue
         mins = (kodt - now).total_seconds() / 60
-        if mins <= MIN_BEFORE: continue                       # too late to beat the lock
+        if not (LOCK < mins <= WINDOW): continue                   # outside the 60–80 write window
         H, A = f["home_team"], f["away_team"]
-        key = None                                            # lineups key with a confirmed XI for this pair
+        # 1) confirmed real lineup for this pair?
+        realkey = None
         for cand in (f"{H}-{A}", f"{A}-{H}"):
             e = lu.get(cand)
             if e and len(e.get("home_xi") or []) >= 11 and len(e.get("away_xi") or []) >= 11 and e.get("state") == "notstarted":
-                key = cand; break
-        if not key: continue                                  # lineup not confirmed yet
-        pred = predict(key)
-        if not pred: log(f"{H}-{A} fid={fid}: model gave no EV pick (key {key})"); continue
+                realkey = cand; break
+        if realkey:
+            tag, pred = "confirmed", predict(realkey)
+        else:                                                       # 2) fallback: previous-game XIs
+            hx, ax = team_prev_xi(H, lu, results, rosters), team_prev_xi(A, lu, results, rosters)
+            if not (hx and ax):
+                continue                                            # no prior game (e.g. matchday 1) -> wait
+            json.dump({f"{H}-{A}": {"home_xi": hx, "away_xi": ax, "state": "notstarted"}}, open(TMPLU, "w"))
+            tag, pred = "fallback", predict(f"{H}-{A}", TMPLU)
+        if not pred:
+            log(f"{H}-{A} fid={fid}: no EV pick ({tag})"); continue
         mh, hs, ascore, ma = pred
         if mh == H and ma == A: home_score, away_score = hs, ascore
         elif mh == A and ma == H: home_score, away_score = ascore, hs
-        else: log(f"{H}-{A} fid={fid}: model {mh}-{ma} doesn't match fixture pair"); continue
-        msg = f"{H} {home_score}-{away_score} {A}  (KO in {mins:.0f}m, key {key}, model {mh} {hs}-{ascore} {ma})"
+        else: log(f"{H}-{A} fid={fid}: model {mh}-{ma} != fixture pair"); continue
+        # decide whether to write: set fallback once; always upgrade to confirmed
+        cur = state.get(fid)
+        if tag == "confirmed" and cur != "confirmed":
+            do = "upgrade->confirmed" if cur == "fallback" else "set(confirmed)"
+        elif tag == "fallback" and cur is None:
+            do = "set(fallback)"
+        else:
+            continue
+        msg = f"{H} {home_score}-{away_score} {A}  [{do}, KO in {mins:.0f}m]"
         print(msg + ("  [DRY]" if dry else "  WRITING"))
         if dry: log("DRY " + msg); continue
         try:
@@ -93,13 +147,13 @@ def main(dry=False):
                 [{"user_id": uid, "fixture_id": f["id"], "home_score": home_score, "away_score": away_score}], bearer=bearer)
             chk = api(BASE + f"/rest/v1/picks?select=home_score,away_score&fixture_id=eq.{f['id']}&user_id=eq.{uid}", bearer=bearer)
             if chk and chk[0]["home_score"] == home_score and chk[0]["away_score"] == away_score:
-                done.add(fid); acted += 1; log("WROTE+verified " + msg)
+                state[fid] = tag; acted += 1; log("WROTE+verified " + msg)
             else:
                 log(f"WRITE UNVERIFIED fid={fid}: got {chk}")
         except Exception as e:
             log(f"WRITE FAILED fid={fid}: {e}")
-    json.dump(sorted(done), open(DONE, "w"))
-    log(f"run complete: acted={acted}, done_total={len(done)}")
+    json.dump(state, open(STATE, "w"))
+    log(f"run complete: acted={acted}")
     print(f"run complete, acted={acted}")
 
 if __name__ == "__main__":

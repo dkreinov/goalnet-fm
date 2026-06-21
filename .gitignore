@@ -25,3 +25,5 @@ _tmpdata/
 wc_bet_auth.json
 wc_bet_done.json
 wc_bet.log
+wc_bet_state.json
+_tmp_lineups.json

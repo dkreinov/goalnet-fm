@@ -93,7 +93,12 @@ def main():
         na = sum(s in rosters.get(a, ()) for s in sn); nb = sum(s in rosters.get(b, ()) for s in sn)
         return a if na >= nb else b
 
-    L = json.load(open(WC / "lineups.json", encoding="utf-8"))
+    # --lineups PATH overrides the lineup source (used for fallback / previous-game XIs)
+    lp = WC / "lineups.json"
+    for i, a in enumerate(sys.argv):
+        if a == "--lineups" and i + 1 < len(sys.argv): lp = Path(sys.argv[i + 1])
+        elif a.startswith("--lineups="): lp = Path(a.split("=", 1)[1])
+    L = json.load(open(lp, encoding="utf-8"))
     Rz = json.load(open(WC / "results.json", encoding="utf-8"))
     for key in keys:
         gg = L.get(key)
