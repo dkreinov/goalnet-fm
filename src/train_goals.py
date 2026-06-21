@@ -172,7 +172,26 @@ def main():
     wt = T(np.where(natl[tr], W, 1.0).astype(np.float32))
     Vh, Vrh, Va_, Vra, Cv, _, _ = g(va)
 
-    print(f"training GoalNet (Poisson, national W={W})...", flush=True)
+    # decision-focused term: maximize EXPECTED FANTASY POINTS of the (soft) EV-pick, not just Poisson fit
+    BETA = float(arg("--beta", "3")); GG, TAU = 7, 0.08
+    _ii = torch.arange(GG + 1); _I = _ii.view(GG + 1, 1).expand(GG + 1, GG + 1)
+    _J = _ii.view(1, GG + 1).expand(GG + 1, GG + 1)
+    _O = torch.where(_I > _J, 0, torch.where(_I == _J, 1, 2)); _lf = torch.lgamma(_ii.float() + 1)
+    def exp_points(lh, la, th, ta):
+        ph = torch.exp(_ii.float().view(1, -1) * torch.log(lh.view(-1, 1).clamp(min=1e-6)) - lh.view(-1, 1) - _lf.view(1, -1))
+        pa = torch.exp(_ii.float().view(1, -1) * torch.log(la.view(-1, 1).clamp(min=1e-6)) - la.view(-1, 1) - _lf.view(1, -1))
+        P = ph.unsqueeze(2) * pa.unsqueeze(1); P = P / P.sum(dim=[1, 2], keepdim=True).clamp(min=1e-9)
+        oprob = torch.stack([torch.tril(P, -1).sum([1, 2]), torch.diagonal(P, dim1=1, dim2=2).sum(1),
+                             torch.triu(P, 1).sum([1, 2])], dim=1)
+        EV = 2 * P + oprob[:, _O]
+        pi = torch.softmax(EV.reshape(EV.size(0), -1) / TAU, dim=1).reshape_as(EV)
+        th = th.clamp(max=GG).long(); ta = ta.clamp(max=GG).long()
+        exact = (_I.unsqueeze(0) == th.view(-1, 1, 1)) & (_J.unsqueeze(0) == ta.view(-1, 1, 1))
+        Otru = torch.where(th > ta, 0, torch.where(th == ta, 1, 2))
+        omatch = (_O.unsqueeze(0) == Otru.view(-1, 1, 1))
+        return (pi * (3.0 * exact.float() + 1.0 * (omatch & ~exact).float())).sum([1, 2])
+
+    print(f"training GoalNet (Poisson + {BETA}*decision-focused, national W={W})...", flush=True)
     torch.manual_seed(7); np.random.seed(7)
     net = GoalNet(A, nctx)
     opt = torch.optim.AdamW(net.parameters(), lr=2e-3, weight_decay=1e-4)
@@ -195,6 +214,8 @@ def main():
             opt.zero_grad()
             lh, la = net(Xhtr[b], Rhtr[b], Xatr[b], Ratr[b], Ctr[b])
             loss = ((pois(lh, hgtr[b]) + pois(la, agtr[b])) * wt[b]).mean()
+            if BETA:
+                loss = loss - BETA * (exp_points(torch.exp(lh), torch.exp(la), hgtr[b], agtr[b]) * wt[b]).mean()
             loss.backward(); opt.step()
         sched.step()
         r = val_rps()
@@ -254,12 +275,14 @@ def main():
                 opt.zero_grad()
                 lh, la = net(Xhf[b], Rhf[b], Xaf[b], Raf[b], Cf[b])
                 loss = ((pois(lh, hgf[b]) + pois(la, agf[b])) * wf[b]).mean()
+                if BETA:
+                    loss = loss - BETA * (exp_points(torch.exp(lh), torch.exp(la), hgf[b], agf[b]) * wf[b]).mean()
                 loss.backward(); opt.step()
             sched.step()
         net.eval()
         print("  (full-data model trained)", flush=True)
         # save checkpoint so prediction is pure inference (no retrain)
-        ckpt = {"state": net.state_dict(), "A": A, "nctx": nctx, "rho": float(best_rho),
+        ckpt = {"state": net.state_dict(), "A": A, "nctx": nctx, "rho": float(best_rho), "beta": BETA,
                 "mu": mu, "sd": sd, "cmu": cmu, "csd": csd, "attrs": ATTRS,
                 "role_mean": {r: role_mean[r] for r in range(4)}, "W": W}
         torch.save(ckpt, ROOT / "data" / "goalnet.pt")
