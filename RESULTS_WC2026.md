@@ -107,6 +107,30 @@ Held-out 2024-25 (`train_loss_ab.py`):
   positives to catch 16 extra draws, pts/g flat (0.7137→0.7136); higher ε loses. The model's natural ties
   are already EV-optimal.
 
+## Ablations: national weight + data scaling (2026-06-21, held-out 2024-25)
+**National-weight sweep** (decision-focused; national subset n=194, noisy but trend clear):
+
+| W | ALL acc | ALL pts/g | NATL acc | NATL rps | NATL pts/g |
+|---|---|---|---|---|---|
+| 1 | 0.495 | 0.716 | 0.546 | 0.191 | 0.773 |
+| 5 (was production) | 0.493 | 0.714 | 0.531 | 0.191 | 0.727 |
+| 15 | 0.495 | 0.714 | 0.572 | 0.184 | 0.763 |
+| 30 | 0.493 | 0.715 | 0.577 | 0.189 | 0.804 |
+- Higher national weight (15–30) lifts NATIONAL accuracy 0.53→0.58 and RPS 0.191→0.184 at **zero cost** to
+  overall (ALL flat ~0.49/0.71 even at W=30). W=5 was sub-optimal for nationals → **use W≈15 for the WC model.**
+
+**Data-fraction sweep** (random removal, W=5): ALL pts/g 100%→0.7137, 90%→0.7116, 80%→0.7105, 70%→0.7062,
+60%→0.7101, 50%→0.7013; RPS 0.2122→0.2161.
+- **The model is DATA-SATURATED** — flat to ~70%, only ~1.7% pts lost at 50%. More match data will NOT
+  meaningfully help; the bookmaker gap is an information/feature problem (injuries/news), not sample size.
+
+## Bookmaker benchmark (real Bet365 1X2)
+- Club leagues (6,288 held-out): bookmaker beats us — acc 0.507 vs 0.486, RPS 0.202 vs 0.212, pts/g 0.743 vs 0.710.
+- **WC2026 national games (36, real odds collected → `data/wc_odds.csv`): NEARLY LEVEL — our 29 vs bookmaker 32
+  pts, 21 vs 22 outcomes, 4 vs 5 exact.** The club gap (~5%) shrinks to ~noise on nationals = our competitive lane.
+- Odds as a FEATURE closes ~⅔ of the club gap (acc →0.499) but converges just below the market; as a TARGET
+  (distillation) = noise. No correct-score market is archived (betexplorer lacks it) → bookmaker exact is MARKET-DC.
+
 ## FM26 grade coverage (WC2026 squads)
 1,248 players across 48 squads (source: worldcup project). After the overnight nationality + by-club scrape:
 FM26-graded **1,047/1,248 (84%)**; **effective 90%** with edition-fallback (most-recent edition when FM26
