@@ -3,14 +3,31 @@
 Goal: predict WC2026 scorelines (not just who-wins) from FM 11v11 grades + national context, to beat the
 fantasy league (scoring: exact score = 3, correct outcome = 1, wrong = 0).
 
-## Models
-- **GoalNet** (`src/train_goals.py`) — the production model. Same grade encoder as the result net (xfmr
-  over the 11 + role embedding + national Elo/form context), but the head emits two Poisson **expected-goals
-  rates** via an attack/defence structure (logλ_home = home_adv + att_h − def_a + ctx_h; logλ_away = att_a −
-  def_h + ctx_a). Trained with Poisson NLL on real goals; who-wins is derived. Inference: full scoreline
-  distribution (double-Poisson + tunable Dixon-Coles ρ) → EV-optimal scoreline under the 3/1 scoring.
-- Result-only net (`src/train_pos2.py`, H/D/A) kept for comparison; goal model strictly better for this game.
-- National matches upweighted (`--w 5`) in the loss — improves nationals at no cost to clubs.
+## Production model: `data/goalnet.pt` (the ONLY live model)
+- **GoalNet** (`src/train_goals.py`) — the production model (everything else is a superseded experiment).
+  Grade encoder (xfmr over the 11 + role embedding + national Elo/form context); head emits two
+  **expected-goals rates** via an attack/defence structure (logλ_home = home_adv + att_h − def_a + ctx_h).
+- **Loss: Poisson NLL − β·expected_points (β=3, decision-focused).** Trained directly for OUR 3/1 scoring
+  (not just calibrated goals). National matches upweighted (`--w 5`). Saved as the single `goalnet.pt`;
+  `predict_game.py` / the `wc-predictor` agent load only this — each retrain overwrites it.
+- Inference: full scoreline distribution (double-Poisson + Dixon-Coles ρ=0.05) → EV-optimal scoreline.
+- Superseded (deleted): the H/D/A result net (`train_pos2.py`) and early prototypes (posnet/model_nn).
+
+## Improvement journey — how the model got better (held-out pts/game unless noted)
+| step | what changed | result |
+|---|---|---|
+| baseline | majority/prior (who-wins) | RPS 0.2288 |
+| 11v11 result net | xfmr over the 22 graded starters → H/D/A | RPS 0.2132 |
+| + Elo/form context | team-strength priors the lineup can't see | RPS 0.2100 |
+| → GoalNet (scoreline) | Poisson goals head → EV-pick under 3/1 | enables exact scores |
+| + national upweight (W=5) | nationals weighted 5× | nat acc ~0.55→0.60 |
+| + imputed 68k set | keep 10/11-graded games (impute 1) | pts/g +0.011 |
+| + edition-fallback | FM26 else most-recent edition for WC squads | coverage 73%→90% |
+| + WC2022 connection | club-anchored links | 33→54/64 matches graded |
+| **+ decision-focused loss (β=3)** | **train for 3/1 points, not just goals** | **pts/g 0.699→0.714 (+2%), acc 0.487→0.496** |
+- Feature metadata (position/competition/formation/attendance embeddings) tested — **none robustly helped**
+  (model at its information ceiling; attributes + Elo already carry the signal). Tie-floor delta tested —
+  **a points wash** (false positives cancel catches), dropped.
 
 ## Datasets (`src/build_player_dataset*.py`)
 - **strict 48,355** matches — both XIs fully FM-graded (11v11), per-starter 62 attrs + role.
@@ -70,9 +87,32 @@ Held-out season 2024-25 (n=11,171), GoalNet, national-weighted. Each feature add
   No `round/stage` column exists (match_kind is only league/national), so "final vs group" couldn't be tested.
   Scripts: `build_player_dataset_pos.py`, `build_meta.py`, `train_enr.py`.
 
+### Decision-focused loss — the one lever that worked (2026-06-21)
+Train the model to maximize EXPECTED FANTASY POINTS, not just Poisson goal-fit. The EV-pick (argmax) is
+non-differentiable, so the loss uses a soft-pick surrogate: build P(h,a) → EV(i,j) per scoreline →
+π=softmax(EV/τ) → maximize Σ π·points(cell,truth). Anchored by Poisson: `loss = Poisson − β·exp_points`.
+Held-out 2024-25 (`train_loss_ab.py`):
+
+| loss | acc | RPS | pts/g | exact% | ties picked | ties caught |
+|---|---|---|---|---|---|---|
+| poisson (old production) | 0.487 | 0.2122 | 0.6993 | 10.6 | 1 | 0 |
+| 3/1-weighted likelihood | 0.485 | 0.2119 | 0.7061 | 11.0 | 0 | 0 |
+| **decision-focused (β=3)** | **0.493** | 0.2122 | **0.7137** | 11.0 | **28** | **9** |
+
+- Decision-focused **beats both** Poisson (+2%) and the simpler weighted likelihood (+1%) — the soft-pick is
+  genuinely better (invariant to points-irrelevant goal-count mass; reallocates capacity to outcome).
+- It **learns to pick the worthwhile ties on its own** (28 vs 0) — exploiting that exact-ties concentrate on
+  0-0/1-1/2-2. Adopted as production (β=3).
+- **Tie-floor delta NOT adopted:** forcing more ties (ε slack) is a points wash — ε=0.03 adds 47 false
+  positives to catch 16 extra draws, pts/g flat (0.7137→0.7136); higher ε loses. The model's natural ties
+  are already EV-optimal.
+
 ## FM26 grade coverage (WC2026 squads)
-1,248 players across 48 squads (source: worldcup project). FM26-graded **849/1,248 (68%)** after the
-nationality club-route scrape. ~399 still missing (mostly players based abroad → `--by-club` pass pending).
+1,248 players across 48 squads (source: worldcup project). After the overnight nationality + by-club scrape:
+FM26-graded **1,047/1,248 (84%)**; **effective 90%** with edition-fallback (most-recent edition when FM26
+missing). Remaining ~10% have no grade in ANY FM edition (obscure minnow-league players) = data floor;
+they're role-mean imputed (low impact, weak teams). Played-game lineups run at ~0–1/22 imputed for major
+sides. Scrapers: `scrape_wc2026_clubs.py` (`--by-club` for players abroad, `--fast` for paced bursts).
 
 ## Scraper fix (fminside throttle)
 Root cause: session `database_version` reverts 7→5 under `update_filter` rate → stale/wrong clubs.
