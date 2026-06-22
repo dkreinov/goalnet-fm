@@ -25,10 +25,38 @@ WC = Path(r"D:\Programming\claude\worldcup\team_db")
 FMV = 3
 
 
+def _ev_grid(P):
+    """EV(fantasy points) for every candidate pick cell (exact=3, correct outcome=1)."""
+    ho = tg.hda_from_P(P); M = P.shape[0]; EV = np.zeros_like(P)
+    for i in range(M):
+        for j in range(M):
+            oc = 0 if i > j else (1 if i == j else 2)
+            EV[i, j] = 3 * P[i, j] + (ho[oc] - P[i, j])
+    return EV
+
+
+def pick_strategy(P, strategy="chalk", beta=0.25, q=0.6):
+    """chalk = max E(points) (production EV-pick). exact = argmax P. contrarian = max E(points) - beta*field-
+    mass (E3): differentiate from a field that picks the chalk cell with prob q else samples the grid. Raises
+    P(finish #1) in a chalk-clustered league at a small cost in expected points (see RESULTS_WC2026.md E3)."""
+    if strategy == "chalk":
+        return tg.ev_pick(P)
+    if strategy == "exact":
+        i, j = np.unravel_index(np.argmax(P), P.shape); return (int(i), int(j))
+    if strategy == "contrarian":
+        EV = _ev_grid(P); F = (1 - q) * P.copy()
+        ci, cj = tg.ev_pick(P); F[ci, cj] += q
+        i, j = np.unravel_index(np.argmax(EV - beta * F), P.shape); return (int(i), int(j))
+    raise ValueError(strategy)
+
+
 def main():
     keys = [a for a in sys.argv[1:] if not a.startswith("--")]
     if not keys:
-        print("usage: predict_game.py NED-SWE [KEY ...]"); return
+        print("usage: predict_game.py NED-SWE [KEY ...] [--strategy chalk|exact|contrarian] [--beta 0.25] [--q 0.6]"); return
+    def _arg(k, d): return sys.argv[sys.argv.index(k) + 1] if k in sys.argv else d
+    global STRATEGY, BETA, QFIELD
+    STRATEGY = _arg("--strategy", "chalk"); BETA = float(_arg("--beta", "0.25")); QFIELD = float(_arg("--q", "0.6"))
     ck = ROOT / "data" / "goalnet.pt"
     if not ck.exists():
         print("no data/goalnet.pt — run: python src/train_goals.py --full  (once)"); return
@@ -124,12 +152,12 @@ def main():
         P = np.mean(grids, 0); P = P / P.sum()         # ensemble = average score grids across seeds
         lhh = float((P.sum(1) * np.arange(P.shape[0])).sum())   # display xG = grid marginal means
         laa = float((P.sum(0) * np.arange(P.shape[1])).sum())
-        ho = tg.hda_from_P(P); pk = tg.ev_pick(P)
+        ho = tg.hda_from_P(P); pk = pick_strategy(P, STRATEGY, BETA, QFIELD)
         flat = sorted(((P[i, j], i, j) for i in range(tg.MAXG + 1) for j in range(tg.MAXG + 1)), reverse=True)
         res = Rz.get(key, {})
         print(f"\n=== {hc} (home) vs {ac} (away)  [status={res.get('status','?')}, imputed {i1+i2}/22] ===")
         print(f"  xG: {hc} {lhh:.2f} - {laa:.2f} {ac}   |   {hc} win {ho[0]*100:.0f}%  draw {ho[1]*100:.0f}%  {ac} win {ho[2]*100:.0f}%")
-        print(f"  EV pick: {hc} {pk[0]}-{pk[1]} {ac}   top: " +
+        print(f"  {STRATEGY} pick: {hc} {pk[0]}-{pk[1]} {ac}   top: " +
               "  ".join(f"{i}-{j} {p*100:.0f}%" for p, i, j in flat[:5]))
         if res.get("status") == "finished":
             print(f"  ACTUAL: {hc} {res['hs']}-{res['as']} {ac}")
