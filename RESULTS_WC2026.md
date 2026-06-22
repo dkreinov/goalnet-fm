@@ -250,6 +250,22 @@ Adaptive ≈ **4× chalk's P(win league)** and +32% over the best fixed contrari
 only differentiate, but *modulate* differentiation by your leaderboard position. Same caveat — depends on the
 field model and on observing live standings (available in a real league).
 
+**E13 national specialisation** (`experiments/e13_national_specialize.py`) — **confirms synthesis #2, biggest
+model-side national gain of the night.** Single-seed train-split, held-out test:
+
+| config | ALL pg | NATL rps | NATL pg | NATL exact |
+|---|---|---|---|---|
+| A baseline W=15 (production recipe) | 0.7108 | 0.1701 | 0.7980 | 21 |
+| **B all → national fine-tune** (lr 5e-4) | 0.6991 | 0.1712 | **0.8424** | **25** |
+| C national-only from scratch | 0.6329 | 0.1675 | 0.8030 | 21 |
+
+Fine-tuning the all-data model on the 972 national train matches lifts the WC lane **+0.044 pg / +4 exacts**
+(largest model-side national gain found), sacrificing only the club set (irrelevant for WC). Natl-only-from-
+scratch (C) is worse → **transfer (pretrain-all → finetune-natl) is the recipe**, not pure specialisation.
+Caveat: natl test n=203 (variance) — but the effect size is the biggest of the night and consistent with the
+whole club≠national pattern. **Top productionisation candidate** for a WC-specific model (path: add a
+`--natl-finetune` stage to train_goals.py --full). Pairs with the contrarian/adaptive pick layer.
+
 ### Synthesis of the night
 1. **The pick layer, not the model, is where the league is won.** Chalk EV-pick is points-optimal but
    league-suboptimal; contrarian (E3) ~3× P(#1), adaptive (E11) ~4×. This is the single biggest lever found.
