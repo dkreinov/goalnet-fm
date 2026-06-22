@@ -182,6 +182,43 @@ not nationals. Worth a future revisit if a larger national test set confirms hid
 **Age feature: not testable.** dob coverage is 1% of 192k players and no age field was scraped into snapshots,
 so the 68k training matches carry no age signal to ablate. Blocked on data, not modelling.
 
+## Phase-1 pick/betting-layer experiments (2026-06-23, no retrain)
+Eval harness `experiments/eval_harness.py`: 5 train-split seeds (no test leakage) → per-seed rates cached for
+val/test; full-data goalnet.pt rates cached for the 41 played WC games. Baselines: TEST-all rps 0.2130 / pg
+0.7105; TEST-natl pg 0.8128; **WC played 35/41 (exact 5)**. All experiments reuse the cache (instant A/B).
+
+**E1 empirical score-prior blend** (`e1_empirical_blend.py`): P=(1-α)·model+α·empirical, α tuned on val.
+α*=0.5 → TEST-all pg 0.7105→**0.7169**, rps 0.2130→0.2121, +38 exacts (helps the club-heavy broad set). BUT
+**hurts the target**: TEST-natl pg 0.8128→0.7980, **WC 35→29**. Val is club-dominated so it over-blends toward
+the club score distribution; nationals score differently. **Not adopted** (same shape as drop-hidden).
+
+**E2 exact-score calibration** (`e2_calibration.py`): joint DC ρ + sharpening γ tuned on val for pts. (ρ,γ)*=
+(0.05, 2.0) → sharpening **wrecks RPS** (0.2130→0.2229, expected), flat on WC (35→35), only +0.01 natl pg /
++2 natl exact. Net wash for the target. **Not adopted.**
+
+**E4 market blend** (`e4_market_blend.py`): de-vig wc_odds.csv 1X2 → fit market Poisson rates → blend with
+model. On 36 matched WC games **model = pure-market = 32/36** (5 exact); every blend weight 0.1–0.5 also 32,
+w=0.7 worse. Model and bookmaker pick the **same** scores → no edge to extract. Confirms the model already
+sits at bookmaker level on nationals.
+
+**E3 game-theoretic / contrarian picks** (`e3_gametheory.py`) — **THE WIN.** The league is a contest vs other
+players: maximising E(points) (chalk EV-pick) ≠ maximising P(finish #1). MC over a field of K opponents (chalk
+w/ prob q, else informed-crowd ~model grid), optimise the pick for P(sole #1). At **K=20, q=0.6**:
+
+| policy | P(sole #1) | P(top1) | meanPts |
+|---|---|---|---|
+| chalk (production EV-pick) | 0.052 | 0.108 | 38.73 |
+| max_exact (argmax P) | 0.091 | 0.150 | 38.67 |
+| **contrarian β=0.25** | **0.159** | **0.198** | 36.75 |
+
+Differentiating gives **~3× the chance of winning the league** (0.159 vs 0.052) for ~2 fewer expected points.
+Sensitivity: when the field is **diverse** (q=0.4) chalk ≈ contrarian (differentiation moot); when the field
+**clusters on chalk** (q≥0.7) contrarian/max_exact win big. Rule: **differentiate more the more you expect
+opponents to clump on obvious scores.** Realized single-world backtest on the actual 41 results still favours
+chalk (35 vs 32) — that's n=1; the MC is over many possible worlds. **Actionable, field-model-dependent;**
+next step = collect the real league's competitor picks to calibrate q. The pick layer (not the model) is where
+league points are won.
+
 ## FM26 grade coverage (WC2026 squads)
 1,248 players across 48 squads (source: worldcup project). After the overnight nationality + by-club scrape:
 FM26-graded **1,047/1,248 (84%)**; **effective 90%** with edition-fallback (most-recent edition when FM26
