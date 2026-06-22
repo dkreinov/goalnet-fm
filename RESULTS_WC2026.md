@@ -131,6 +131,22 @@ Held-out 2024-25 (`train_loss_ab.py`):
 - Odds as a FEATURE closes ~⅔ of the club gap (acc →0.499) but converges just below the market; as a TARGET
   (distillation) = noise. No correct-score market is archived (betexplorer lacks it) → bookmaker exact is MARKET-DC.
 
+## Cheap wins + autoregressive (2026-06-22)
+**Seed-ensemble + calibration** (5 seeds W=15, held-out test): ensembling is a small real win — RPS ALL
+0.2145→0.2130, national acc 0.586→0.596, **national pts/g 0.798→0.813**. Temperature calibration (a=0.90)
+improves RPS a touch more (0.2123) but is **points-neutral** (helps the distribution, not the argmax pick).
+→ ensemble worth adopting (esp. nationals); calibration = free RPS, no points. (`train_ensemble.py`)
+
+**Autoregressive score-effects model (Version B)** (`build_segments.py` → 38,947 valid-segment matches;
+`train_autoreg.py`): a learned state-multiplier table modulates per-15-min scoring by goal difference,
+rolled forward via DP to a final-score distribution. **Learned a REAL state effect** — mult by diff
+[≤-2,-1,0,+1,≥+2] = [1.277, 1.091, 0.992, 0.910, 0.979] (trailing teams +28%, leading teams ease off ~9%,
+after the encoder controls for strength). **But prediction impact is negligible**: vs static double-Poisson
+(same base rates) pts/g +0.0015 ALL / +0.007 NATL, +11 exact/4144, RPS a hair worse. Confirms the model is
+at the INFORMATION ceiling — richer model classes (and Dixon-Coles ρ already covers the first-order effect)
+don't move the metrics. **Not adopted.** Net: the only lever left is new FEATURES (injury/lineup/market), not
+architecture; for the WC, W=15 + ensemble is the practical sweet spot.
+
 ## FM26 grade coverage (WC2026 squads)
 1,248 players across 48 squads (source: worldcup project). After the overnight nationality + by-club scrape:
 FM26-graded **1,047/1,248 (84%)**; **effective 90%** with edition-fallback (most-recent edition when FM26
