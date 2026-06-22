@@ -147,6 +147,41 @@ at the INFORMATION ceiling — richer model classes (and Dixon-Coles ρ already 
 don't move the metrics. **Not adopted.** Net: the only lever left is new FEATURES (injury/lineup/market), not
 architecture; for the WC, W=15 + ensemble is the practical sweet spot.
 
+## 5-seed ensemble baked into production (2026-06-22)
+`train_goals.py --full --ensemble N` trains N full-data seeds and stores a `states` list in `goalnet.pt`
+(`state`=seed-0 kept for back-compat); `predict_game.py` loads all seeds and **averages the per-match score
+grids**. Production `goalnet.pt` now holds **5 seeds** (3.0 MB). Prior held-out A/B (`train_ensemble.py`):
+single seed national pts/g 0.798 → ensemble **0.813**, RPS better; temperature calibration was points-neutral
+so it was dropped. Inference stays instant (5 forward passes, ~5 s). Single-seed checkpoints still load
+(states falls back to [state]).
+
+## FM-attribute category ablation — "does removing parts of the FM score help?" (2026-06-22)
+`train_attrcat.py`: leave-one-category-out over the 62 attrs grouped into {technical(16), mental(14),
+physical(8), goalkeeping(11), hidden(13)}. Each category neutralised (standardise → set its columns to 0 =
+impute to dataset mean), then the W=15 decision-focused GoalNet retrained; A/B on held-out test (n=10,457;
+natl=203). Lower RPS / higher pts/g = better.
+
+| config | ALL rps | ALL pts/g | ALL acc | NATL rps | NATL pts/g |
+|---|---|---|---|---|---|
+| **full** | 0.2145 | 0.7108 | 0.493 | **0.1701** | 0.7980 |
+| drop technical | 0.2142 | 0.7037 | 0.490 | 0.1704 | 0.8227 |
+| drop mental | 0.2151 | 0.7041 | 0.493 | 0.1771 | 0.7685 |
+| drop physical | 0.2146 | 0.7029 | 0.492 | 0.1753 | 0.7783 |
+| drop goalkeeping | 0.2156 | 0.6998 | 0.490 | 0.1724 | 0.7783 |
+| **drop hidden** | **0.2138** | **0.7145** | **0.497** | 0.1718 | 0.7783 |
+
+Findings: removing **technical / mental / physical / goalkeeping each HURTS** overall pts/g → all four carry
+real signal (FM grades' value isn't concentrated; no category is dead weight). The one exception: dropping the
+**13 hidden/personality attrs** (ambition, consistency, controversy, dirtiness, loyalty, professionalism,
+temperament, versatility, …) **improves the broad set** (rps 0.2145→0.2138, pts/g 0.7108→0.7145, acc +0.4pp)
+— personality grades are net noise for match prediction. **BUT on the WC-nationals lane (the target) the full
+set is better by both metrics** (NATL rps 0.1701 vs 0.1718, pts/g 0.798 vs 0.778; natl n=203 = high variance).
+**Decision: keep the full 62-attr set in production** — the "drop hidden" gain is on the club-heavy ALL set,
+not nationals. Worth a future revisit if a larger national test set confirms hidden hurts there too.
+
+**Age feature: not testable.** dob coverage is 1% of 192k players and no age field was scraped into snapshots,
+so the 68k training matches carry no age signal to ablate. Blocked on data, not modelling.
+
 ## FM26 grade coverage (WC2026 squads)
 1,248 players across 48 squads (source: worldcup project). After the overnight nationality + by-club scrape:
 FM26-graded **1,047/1,248 (84%)**; **effective 90%** with edition-fallback (most-recent edition when FM26
