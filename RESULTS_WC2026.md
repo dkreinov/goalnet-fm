@@ -219,6 +219,49 @@ chalk (35 vs 32) — that's n=1; the MC is over many possible worlds. **Actionab
 next step = collect the real league's competitor picks to calibrate q. The pick layer (not the model) is where
 league points are won.
 
+## Phase-2/4 experiments (2026-06-23)
+
+**E6 squad experience / cohesion feature** (`experiments/e6_cohesion.py`): new context features = mean prior
+starts (career apps-to-date, leakage-free) of each XI + lineup CONTINUITY (fraction of XI that also started the
+team's previous match). Single-seed train-split A/B on held-out test:
+
+| context | ALL pg | ALL rps | NATL pg | NATL exact |
+|---|---|---|---|---|
+| base ctx(10) | 0.7108 | 0.2145 | 0.7980 | 21 |
+| **ctx+exp(14)** (apps+continuity) | 0.7024 | 0.2151 | **0.8276** | **24** |
+| ctx+apps(12) (apps only) | 0.7111 | 0.2145 | 0.7980 | 21 |
+
+Continuity carries national signal — **+0.030 natl pg, +3 exacts, the largest national-lane lift from any
+feature tried** — but HURTS the broad club set (−0.008 pg, n=10,457 reliable; natl n=203 noisy). apps-only is
+flat. **Candidate, not adopted**: needs WC-eval confirmation (the natl gain is small-sample, the club
+regression is solid).
+
+**E11 tournament-forward sim + leaderboard-aware adaptive risk** (`experiments/e11_adaptive.py`) — **best
+strategic result.** Treat the 41 WC games as sequential rounds vs a field (K=20, q=0.6); hero adapts contrarian
+β to its standing (behind the leader → raise β / gamble; ahead → β→0 / protect):
+
+| policy | P(sole #1) | P(top1) |
+|---|---|---|
+| chalk (production EV-pick) | 0.056 | 0.121 |
+| fixed contrarian β=0.25 | 0.156 | 0.195 |
+| **ADAPTIVE (risk by rank)** | **0.206** | **0.290** |
+
+Adaptive ≈ **4× chalk's P(win league)** and +32% over the best fixed contrarian. Confirms and extends E3: not
+only differentiate, but *modulate* differentiation by your leaderboard position. Same caveat — depends on the
+field model and on observing live standings (available in a real league).
+
+### Synthesis of the night
+1. **The pick layer, not the model, is where the league is won.** Chalk EV-pick is points-optimal but
+   league-suboptimal; contrarian (E3) ~3× P(#1), adaptive (E11) ~4×. This is the single biggest lever found.
+   Shipped as `predict_game.py --strategy chalk|exact|contrarian`; adaptive needs live standings.
+2. **Club and national lanes want different things.** Drop-hidden + empirical-blend help the club-heavy set;
+   continuity + sharpening help nationals. Production is measured on a club-dominated mix but the TARGET is
+   nationals → a **national-specialised model / per-lane tuning** is the most promising untested model-side
+   lever (beyond the existing W=15 upweight).
+3. **Model is information-capped, confirmed again.** Market = model on WC (E4); every new feature either hurts
+   the broad set or only nudges the noisy natl slice. Stop chasing RPS; optimise the pick policy and collect
+   the real league's competitor picks to calibrate the field (q).
+
 ## FM26 grade coverage (WC2026 squads)
 1,248 players across 48 squads (source: worldcup project). After the overnight nationality + by-club scrape:
 FM26-graded **1,047/1,248 (84%)**; **effective 90%** with edition-fallback (most-recent edition when FM26
