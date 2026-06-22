@@ -62,6 +62,12 @@ def main():
     ye, hge, age_ = y[ev], hg[ev], ag[ev]
     n_ev = len(ye); actual_draws = int((ye == 1).sum())
     print(f"eval games={n_ev}  actual draws={actual_draws} ({actual_draws/n_ev*100:.1f}%)", flush=True)
+    # argmax-OUTCOME draw recall (H/D/A classifier, independent of the scoreline EV-pick)
+    Phda = np.array([tg.hda_from_P(tg.score_matrix(a, b, 0.0)) for a, b in zip(lh, la)])
+    amax = Phda.argmax(1)
+    print(f"argmax-outcome: predicts draw in {int((amax==1).sum())}/{n_ev} games; "
+          f"of {actual_draws} actual draws, argmax=draw on {int(((amax==1)&(ye==1)).sum())} "
+          f"(recall {((amax==1)&(ye==1)).sum()/max(actual_draws,1)*100:.1f}%)", flush=True)
     print(f"\n  rho     EVpick_draws   mean_P(draw)   draws_caught(correct)   total_pts", flush=True)
     for rho in [0.05, 0.0, -0.05, -0.10, -0.15]:
         picks_draw = caught = tot = 0; pdraw_sum = 0.0

@@ -36,7 +36,10 @@ def main():
     A, nctx = c["A"], c["nctx"]
     mu, sd, cmu, csd, rho = c["mu"], c["sd"], c["cmu"], c["csd"], c["rho"]
     ATTRS = c["attrs"]; aidx = {n: i for i, n in enumerate(ATTRS)}; role_mean = c["role_mean"]
-    net = tg.GoalNet(A, nctx); net.load_state_dict(c["state"]); net.eval()
+    states = c.get("states") or [c["state"]]           # seed ensemble when present, else single model
+    nets = []
+    for st in states:
+        nt = tg.GoalNet(A, nctx); nt.load_state_dict(st); nt.eval(); nets.append(nt)
 
     con = db.connect()
     natctx = tg.national_context(con)
@@ -113,10 +116,15 @@ def main():
         ctx = tg.ctx_vec(natctx.get(teams.get(hc), (tg.BASE, 1, 0)), natctx.get(teams.get(ac), (tg.BASE, 1, 0)))
         Xh = ((Xh - mu) / sd).astype(np.float32); Xa = ((Xa - mu) / sd).astype(np.float32)
         ctxn = ((ctx - cmu) / csd).astype(np.float32)
+        grids = []
         with torch.no_grad():
-            lh, la = net(T(Xh[None]), T(Rh[None]), T(Xa[None]), T(Ra[None]), T(ctxn[None]))
-        lhh, laa = math.exp(float(lh[0])), math.exp(float(la[0]))
-        P = tg.score_matrix(lhh, laa, rho); ho = tg.hda_from_P(P); pk = tg.ev_pick(P)
+            for nt in nets:
+                lh, la = nt(T(Xh[None]), T(Rh[None]), T(Xa[None]), T(Ra[None]), T(ctxn[None]))
+                grids.append(tg.score_matrix(math.exp(float(lh[0])), math.exp(float(la[0])), rho))
+        P = np.mean(grids, 0); P = P / P.sum()         # ensemble = average score grids across seeds
+        lhh = float((P.sum(1) * np.arange(P.shape[0])).sum())   # display xG = grid marginal means
+        laa = float((P.sum(0) * np.arange(P.shape[1])).sum())
+        ho = tg.hda_from_P(P); pk = tg.ev_pick(P)
         flat = sorted(((P[i, j], i, j) for i in range(tg.MAXG + 1) for j in range(tg.MAXG + 1)), reverse=True)
         res = Rz.get(key, {})
         print(f"\n=== {hc} (home) vs {ac} (away)  [status={res.get('status','?')}, imputed {i1+i2}/22] ===")

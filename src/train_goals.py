@@ -259,34 +259,41 @@ def main():
     #      match is in the past relative to June-2026 games). Fixed epoch budget ~ where val converged. ----
     if "--full" in sys.argv:
         full_ep = max(30, e // 2)
-        print(f"\nretraining on ALL {len(mids):,} matches for WC prediction ({full_ep} epochs)...", flush=True)
+        nseed = int(arg("--ensemble", "1"))
+        print(f"\nretraining on ALL {len(mids):,} matches for WC prediction "
+              f"({full_ep} epochs, {nseed} seed{'s' if nseed > 1 else ''})...", flush=True)
         allm = np.ones(len(mids), bool)
         Xhf, Rhf, Xaf, Raf, Cf, hgf, agf = g(allm)
         wf = T(np.where(natl, W, 1.0).astype(np.float32))
-        torch.manual_seed(7); np.random.seed(7)
-        net = GoalNet(A, nctx)
-        opt = torch.optim.AdamW(net.parameters(), lr=2e-3, weight_decay=1e-4)
-        sched = torch.optim.lr_scheduler.CosineAnnealingLR(opt, full_ep)
         nf = Xhf.size(0)
-        for e2 in range(full_ep):
-            net.train(); perm = torch.randperm(nf)
-            for i in range(0, nf, bs):
-                b = perm[i:i + bs]
-                opt.zero_grad()
-                lh, la = net(Xhf[b], Rhf[b], Xaf[b], Raf[b], Cf[b])
-                loss = ((pois(lh, hgf[b]) + pois(la, agf[b])) * wf[b]).mean()
-                if BETA:
-                    loss = loss - BETA * (exp_points(torch.exp(lh), torch.exp(la), hgf[b], agf[b]) * wf[b]).mean()
-                loss.backward(); opt.step()
-            sched.step()
-        net.eval()
-        print("  (full-data model trained)", flush=True)
-        # save checkpoint so prediction is pure inference (no retrain)
-        ckpt = {"state": net.state_dict(), "A": A, "nctx": nctx, "rho": float(best_rho), "beta": BETA,
+        states = []
+        for s in range(nseed):
+            torch.manual_seed(s); np.random.seed(s)
+            net = GoalNet(A, nctx)
+            opt = torch.optim.AdamW(net.parameters(), lr=2e-3, weight_decay=1e-4)
+            sched = torch.optim.lr_scheduler.CosineAnnealingLR(opt, full_ep)
+            for e2 in range(full_ep):
+                net.train(); perm = torch.randperm(nf)
+                for i in range(0, nf, bs):
+                    b = perm[i:i + bs]
+                    opt.zero_grad()
+                    lh, la = net(Xhf[b], Rhf[b], Xaf[b], Raf[b], Cf[b])
+                    loss = ((pois(lh, hgf[b]) + pois(la, agf[b])) * wf[b]).mean()
+                    if BETA:
+                        loss = loss - BETA * (exp_points(torch.exp(lh), torch.exp(la), hgf[b], agf[b]) * wf[b]).mean()
+                    loss.backward(); opt.step()
+                sched.step()
+            net.eval()
+            states.append({k: v.clone() for k, v in net.state_dict().items()})
+            print(f"  seed {s} trained", flush=True)
+        print(f"  ({nseed}-seed full-data model trained)", flush=True)
+        # save checkpoint so prediction is pure inference (no retrain). "state" = seed-0 (back-compat),
+        # "states" = all seeds; predict averages the per-match score grids across seeds when present.
+        ckpt = {"state": states[0], "states": states, "A": A, "nctx": nctx, "rho": float(best_rho), "beta": BETA,
                 "mu": mu, "sd": sd, "cmu": cmu, "csd": csd, "attrs": ATTRS,
                 "role_mean": {r: role_mean[r] for r in range(4)}, "W": W}
         torch.save(ckpt, ROOT / "data" / "goalnet.pt")
-        print("  saved data/goalnet.pt", flush=True)
+        print(f"  saved data/goalnet.pt ({nseed} seed{'s' if nseed > 1 else ''})", flush=True)
 
     # ---- score the played WC2026 games ----
     natctx = national_context(con)

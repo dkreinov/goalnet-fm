@@ -12,7 +12,7 @@ State per fixture: 'fallback' or 'confirmed' (a confirmed pick is final and not 
 Run:  python auto_bet.py           # live
       python auto_bet.py --dry     # predict + log only, no writes
 """
-import os, sys, json, re, subprocess, urllib.request, datetime, unicodedata
+import os, sys, json, re, subprocess, urllib.request, datetime, unicodedata, time
 
 FM = os.path.dirname(os.path.abspath(__file__))
 WC = r"D:\Programming\claude\worldcup\team_db"
@@ -20,6 +20,9 @@ AUTH = os.path.join(FM, "wc_bet_auth.json")
 STATE = os.path.join(FM, "wc_bet_state.json")   # {fixture_id: 'fallback'|'confirmed'}
 LOG = os.path.join(FM, "wc_bet.log")
 TMPLU = os.path.join(FM, "_tmp_lineups.json")
+NOTIFY = os.path.join(FM, "wc_notify.json")     # {"hc_url":..,"ntfy_url":..,"win_toast":true}  (gitignored)
+HEALTH = os.path.join(FM, "wc_bet_health.json") # {"status":"ok|fail","since":ts,"last_notify":ts}
+RENOTIFY_SEC = 2 * 3600                          # re-alert at most every 2h while still down
 PY = sys.executable
 ANON = ("***REMOVED***"
         "***REMOVED***"
@@ -29,6 +32,50 @@ WINDOW = 80   # start considering a game this many minutes before kickoff
 LOCK = 60     # never write within this many minutes of kickoff (app lock)
 
 def log(m): open(LOG, "a", encoding="utf-8").write(f"{datetime.datetime.now():%Y-%m-%d %H:%M} | {m}\n")
+
+def _toast(title, msg):
+    """Immediate local popup (Windows Education/Pro has msg.exe). Best-effort, never raises."""
+    try: subprocess.run(["msg", "*", "/TIME:60", f"{title}: {msg}"], timeout=15)
+    except Exception: pass
+
+def _ping(url, body=None, headers=None):
+    try:
+        req = urllib.request.Request(url, data=(body.encode("utf-8") if body else b""),
+                                     headers=(headers or {}), method="POST")
+        urllib.request.urlopen(req, timeout=15)
+    except Exception: pass
+
+def health_signal(ok, reason=""):
+    """Track ok/fail transitions and PUSH on: first failure, recovery, and every 2h while still down.
+    Always pings Healthchecks (so the bot dying entirely — PC asleep, task disabled — also trips its
+    dead-man's-switch alert, exactly the silent 17h outage we just had). Channels from wc_notify.json."""
+    try: cfg = json.load(open(NOTIFY))
+    except Exception: cfg = {}
+    try: st = json.load(open(HEALTH))
+    except Exception: st = {}
+    now = int(time.time())
+    hc = cfg.get("hc_url")
+    if hc:                                                   # ping every run -> keeps the check alive
+        _ping(hc if ok else hc.rstrip("/") + "/fail", None if ok else reason[:400])
+    prev = st.get("status")
+    if ok:
+        fire = (prev == "fail")                             # recovered
+    else:
+        fire = (prev != "fail") or (now - st.get("last_notify", 0) >= RENOTIFY_SEC)
+    if fire:
+        if ok:
+            title, body = "WC auto-bet RECOVERED", "session works again"
+        else:
+            title, body = "WC auto-bet AUTH FAILED", f"{reason[:120]} — re-seed token via browser login"
+        if cfg.get("win_toast", True): _toast(title, body)
+        if cfg.get("ntfy_url"):
+            _ping(cfg["ntfy_url"], body,
+                  {"Title": title, "Priority": ("default" if ok else "high"), "Tags": ("white_check_mark" if ok else "rotating_light")})
+        st["last_notify"] = now
+    if prev != ("ok" if ok else "fail"): st["since"] = now
+    st["status"] = "ok" if ok else "fail"
+    try: json.dump(st, open(HEALTH, "w"))
+    except Exception: pass
 
 def api(url, method="GET", data=None, bearer=None):
     h = {"apikey": ANON, "Content-Type": "application/json"}
@@ -92,13 +139,14 @@ def main(dry=False):
         except Exception: pass
     try: bearer, uid = get_access()
     except Exception as e:
-        log(f"AUTH FAILED: {e}"); print("auth failed:", e); return
+        log(f"AUTH FAILED: {e}"); health_signal(False, f"auth: {e}"); print("auth failed:", e); return
+    health_signal(True)                                     # auth works -> clear/recover the alert
     try:
         fx = api(BASE + "/rest/v1/fixtures?select=id,round,kickoff_utc,home_team,away_team,status&order=kickoff_utc.asc", bearer=bearer)
         lu = json.load(open(os.path.join(WC, "lineups.json"), encoding="utf-8"))
         results = json.load(open(os.path.join(WC, "results.json"), encoding="utf-8"))
     except Exception as e:
-        log(f"READ FAILED: {e}"); print("read failed:", e); return
+        log(f"READ FAILED: {e}"); health_signal(False, f"read: {e}"); print("read failed:", e); return
     rosters = load_rosters()
     now = datetime.datetime.now(datetime.timezone.utc)
     acted = 0
