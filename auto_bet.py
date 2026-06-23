@@ -20,6 +20,7 @@ AUTH = os.path.join(FM, "wc_bet_auth.json")
 STATE = os.path.join(FM, "wc_bet_state.json")   # {fixture_id: 'fallback'|'confirmed'}
 LOG = os.path.join(FM, "wc_bet.log")
 TMPLU = os.path.join(FM, "_tmp_lineups.json")
+LOCKTEST = os.path.join(FM, "wc_locktest.json")  # one-shot probe: {"pair":"POR-UZB","band":[38,58]} -> result
 NOTIFY = os.path.join(FM, "wc_notify.json")     # {"hc_url":..,"ntfy_url":..,"win_toast":true}  (gitignored)
 HEALTH = os.path.join(FM, "wc_bet_health.json") # {"status":"ok|fail","since":ts,"last_notify":ts}
 RENOTIFY_SEC = 2 * 3600                          # re-alert at most every 2h while still down
@@ -123,14 +124,84 @@ def team_prev_xi(code, lu, results, rosters):
     return hx if ov(hx) >= ov(ax) else ax
 
 def predict(key, lineups_path=None):
-    cmd = [PY, os.path.join(FM, "src", "predict_game.py"), key]
+    # Pin --strategy chalk (= production max-EV pick) so a future change to predict_game's DEFAULT
+    # strategy can't silently alter our bets. Match the generic "<strategy> pick:" line (predict_game
+    # renamed "EV pick:" -> "chalk pick:" in da96a15; matching `\w+ pick:` survives further relabels).
+    cmd = [PY, os.path.join(FM, "src", "predict_game.py"), key, "--strategy", "chalk"]
     if lineups_path: cmd += ["--lineups", lineups_path]
     try:
         p = subprocess.run(cmd, capture_output=True, text=True, timeout=120, cwd=FM)
     except Exception:
         return None
-    m = re.search(r"EV pick:\s+([A-Z]{3})\s+(\d+)-(\d+)\s+([A-Z]{3})", (p.stdout or "") + (p.stderr or ""))
+    m = re.search(r"\bpick:\s+([A-Z]{3})\s+(\d+)-(\d+)\s+([A-Z]{3})", (p.stdout or "") + (p.stderr or ""))
     return (m.group(1), int(m.group(2)), int(m.group(3)), m.group(4)) if m else None
+
+def model_pick(f, lu, results, rosters):
+    """(home_score, away_score, tag) for a fixture oriented to its home/away — confirmed XI if available,
+    else previous-game fallback. None if not predictable. Same logic as the main loop, factored for reuse."""
+    H, A = f["home_team"], f["away_team"]
+    realkey = None
+    for cand in (f"{H}-{A}", f"{A}-{H}"):
+        e = lu.get(cand)
+        if e and len(e.get("home_xi") or []) >= 11 and len(e.get("away_xi") or []) >= 11 and e.get("state") == "notstarted":
+            realkey = cand; break
+    if realkey:
+        tag, pred = "confirmed", predict(realkey)
+    else:
+        hx, ax = team_prev_xi(H, lu, results, rosters), team_prev_xi(A, lu, results, rosters)
+        if not (hx and ax): return None
+        json.dump({f"{H}-{A}": {"home_xi": hx, "away_xi": ax, "state": "notstarted"}}, open(TMPLU, "w"))
+        tag, pred = "fallback", predict(f"{H}-{A}", TMPLU)
+    if not pred: return None
+    mh, hs, ascore, ma = pred
+    if mh == H and ma == A: return hs, ascore, tag
+    if mh == A and ma == H: return ascore, hs, tag
+    return None
+
+def lock_probe(fx, lu, results, rosters, bearer, uid, now):
+    """One-shot: does the app accept an API write INSIDE the assumed 60-min lock? Perturb-then-restore so
+    the verdict is unambiguous and the fixture is always left holding our real model pick. Config: wc_locktest.json."""
+    if not os.path.exists(LOCKTEST): return
+    try: lt = json.load(open(LOCKTEST))
+    except Exception: return
+    if not lt or lt.get("done"): return
+    pair = set((lt.get("pair") or "").split("-")); lo, hi = lt.get("band", [38, 58])
+    for f in fx:
+        if f.get("status") != "scheduled" or {f["home_team"], f["away_team"]} != pair: continue
+        try: kodt = datetime.datetime.fromisoformat((f.get("kickoff_utc") or "").replace("Z", "+00:00"))
+        except Exception: return
+        m = (kodt - now).total_seconds() / 60
+        if not (lo <= m <= hi): return                         # not in test band on this run
+        mp = model_pick(f, lu, results, rosters)
+        if not mp: log(f"LOCKTEST {lt['pair']}: no model pick, skip"); return
+        hs, asc, _tag = mp; fid = f["id"]
+        def rd():
+            r = api(BASE + f"/rest/v1/picks?select=home_score,away_score&fixture_id=eq.{fid}&user_id=eq.{uid}", bearer=bearer)
+            return [r[0]["home_score"], r[0]["away_score"]] if r else None
+        def wr(h_, a_):
+            api(BASE + "/rest/v1/picks", "POST", [{"user_id": uid, "fixture_id": fid, "home_score": h_, "away_score": a_}], bearer=bearer)
+        probe = [hs, asc + 1 if asc < 5 else asc - 1]
+        if probe == [hs, asc]: probe = [hs + 1 if hs < 5 else hs - 1, asc]
+        try:
+            before = rd()
+            wr(*probe); after_probe = rd()
+            wr(hs, asc); after_final = rd()                    # restore the real model pick
+            accepted = (after_probe == probe)
+            verdict = "ACCEPTED — app does NOT block API writes <60m (can lower LOCK)" if accepted \
+                      else "REJECTED — app enforces the <60m lock"
+            lt.update({"done": True, "mins": round(m), "before": before, "probe": probe,
+                       "after_probe": after_probe, "after_final": after_final, "verdict": verdict})
+            json.dump(lt, open(LOCKTEST, "w"))
+            log(f"LOCKTEST {lt['pair']} @ {m:.0f}m: {verdict} | before={before} probe={probe} after_probe={after_probe} final={after_final}")
+            try:
+                c = json.load(open(NOTIFY))
+                if c.get("ntfy_url"):
+                    _ping(c["ntfy_url"], f"{lt['pair']} @ {round(m)}m: {verdict}",
+                          {"Title": "WC lock test result", "Priority": "high", "Tags": "lock"})
+            except Exception: pass
+        except Exception as e:
+            log(f"LOCKTEST {lt['pair']} ERR: {e}")
+        return
 
 def main(dry=False):
     state = {}
@@ -201,6 +272,9 @@ def main(dry=False):
         except Exception as e:
             log(f"WRITE FAILED fid={fid}: {e}")
     json.dump(state, open(STATE, "w"))
+    if not dry:
+        try: lock_probe(fx, lu, results, rosters, bearer, uid, now)
+        except Exception as e: log(f"LOCKTEST outer ERR: {e}")
     log(f"run complete: acted={acted}")
     print(f"run complete, acted={acted}")
 

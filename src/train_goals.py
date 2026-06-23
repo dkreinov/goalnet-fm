@@ -266,6 +266,14 @@ def main():
         Xhf, Rhf, Xaf, Raf, Cf, hgf, agf = g(allm)
         wf = T(np.where(natl, W, 1.0).astype(np.float32))
         nf = Xhf.size(0)
+        # national-only fine-tune (E13): pretrain on all -> fine-tune on national matches only. Specialises
+        # the model to the WC lane (+0.044 natl pg / +4 exacts on held-out test); club accuracy is sacrificed
+        # but irrelevant for WC prediction. Transfer (pretrain->finetune) beat national-only-from-scratch.
+        FT = "--natl-finetune" in sys.argv
+        ft_ep = int(arg("--ft-epochs", "40")); ft_lr = float(arg("--ft-lr", "5e-4"))
+        if FT:
+            Xhn_, Rhn_, Xan_, Ran_, Cn_, hgn_, agn_ = g(natl); nnf = Xhn_.size(0)
+            print(f"  national fine-tune ON: {nnf:,} national matches, {ft_ep} epochs, lr {ft_lr}", flush=True)
         states = []
         for s in range(nseed):
             torch.manual_seed(s); np.random.seed(s)
@@ -283,15 +291,29 @@ def main():
                         loss = loss - BETA * (exp_points(torch.exp(lh), torch.exp(la), hgf[b], agf[b]) * wf[b]).mean()
                     loss.backward(); opt.step()
                 sched.step()
+            if FT:   # fine-tune this seed on national-only matches (low LR, no upweight needed — all national)
+                opt = torch.optim.AdamW(net.parameters(), lr=ft_lr, weight_decay=1e-4)
+                sched = torch.optim.lr_scheduler.CosineAnnealingLR(opt, ft_ep)
+                for e2 in range(ft_ep):
+                    net.train(); perm = torch.randperm(nnf)
+                    for i in range(0, nnf, bs):
+                        b = perm[i:i + bs]
+                        opt.zero_grad()
+                        lh, la = net(Xhn_[b], Rhn_[b], Xan_[b], Ran_[b], Cn_[b])
+                        loss = (pois(lh, hgn_[b]) + pois(la, agn_[b])).mean()
+                        if BETA:
+                            loss = loss - BETA * exp_points(torch.exp(lh), torch.exp(la), hgn_[b], agn_[b]).mean()
+                        loss.backward(); opt.step()
+                    sched.step()
             net.eval()
             states.append({k: v.clone() for k, v in net.state_dict().items()})
-            print(f"  seed {s} trained", flush=True)
-        print(f"  ({nseed}-seed full-data model trained)", flush=True)
+            print(f"  seed {s} trained{' + natl-finetuned' if FT else ''}", flush=True)
+        print(f"  ({nseed}-seed full-data model trained{', national-specialised' if FT else ''})", flush=True)
         # save checkpoint so prediction is pure inference (no retrain). "state" = seed-0 (back-compat),
         # "states" = all seeds; predict averages the per-match score grids across seeds when present.
         ckpt = {"state": states[0], "states": states, "A": A, "nctx": nctx, "rho": float(best_rho), "beta": BETA,
                 "mu": mu, "sd": sd, "cmu": cmu, "csd": csd, "attrs": ATTRS,
-                "role_mean": {r: role_mean[r] for r in range(4)}, "W": W}
+                "role_mean": {r: role_mean[r] for r in range(4)}, "W": W, "natl_ft": FT}
         torch.save(ckpt, ROOT / "data" / "goalnet.pt")
         print(f"  saved data/goalnet.pt ({nseed} seed{'s' if nseed > 1 else ''})", flush=True)
 

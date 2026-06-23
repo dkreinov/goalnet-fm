@@ -29,3 +29,5 @@ wc_bet_state.json
 wc_bet_health.json
 wc_notify.json
 _tmp_lineups.json
+wc_locktest.json
+image_gen/lineup_probe.log
