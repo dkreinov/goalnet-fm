@@ -15,13 +15,13 @@ Self-contained instructions for generating fantasy-league scoreline picks. Read 
 
 ## 3. The tool
 ```
-python src/predict_game.py KEY1 KEY2 ... --strategy <chalk|exacts|contrarian>
+python src/predict_game.py KEY1 KEY2 ... --round <group|r32|r16|qf|sf|final> --rival <unknown|safe|gambling>
 ```
-- KEYs are team-code fixtures, e.g. `ESP-FRA BRA-ARG`. It prints, per game: the xG, W/D/L %, the pick, and the top-5 scorelines with probabilities.
-- Strategies (all read the SAME GoalNet grid):
-  - `chalk` — points-optimal pick (safe).
-  - `exacts` — most likely EXACT after nudging to real common scores (1-1 draws, 2-1 over 2-0). **This is the default.**
-  - `contrarian` — differentiated pick (for separating from rivals).
+- KEYs are team-code fixtures, e.g. `ESP-FRA BRA-ARG`. It prints, per game: the round/multiplier + reasoning, the xG, W/D/L %, the pick, and the top-5 scorelines with probabilities.
+- **`--round` auto-applies all the decision logic in §5** — you normally only need `--round` (and `--rival` if you've read RIVAL_1). The tool picks the strategy for you and prints why.
+- Manual override (rarely needed): `--strategy <chalk|exacts|contrarian|gamble>` forces a specific pick rule and ignores `--round`.
+  - `chalk` — points-optimal (safe). `exacts` — most likely exact, nudged to real scores (1-1, 2-1). `gamble` — 2nd-best differentiated exact. `contrarian` — EV-differentiated.
+- Default with no flags = `exacts`.
 
 ## 4. Strategic situation (why these rules)
 - YOU's gap is **purely exact-score conversion**: league-best outcome reading (25 correct) but fewest exacts of the contenders (3). Do **NOT** go contrarian on outcomes — that throws away the one elite edge.
@@ -29,15 +29,17 @@ python src/predict_game.py KEY1 KEY2 ... --strategy <chalk|exacts|contrarian>
 - The **draw hole** is the biggest leak: GoalNet/chalk nails almost no drawn games as exacts. The `exacts` strategy fixes this by favouring 1-1.
 
 ## 5. Per-game decision procedure
-For each fixture:
-1. Run `predict_game.py KEY --strategy exacts` to get GoalNet's grid + the exact-optimal pick.
-2. **Group stage / R32 / R16 (×1–×4):** submit the `exacts` pick. Protect points; don't gamble here.
-3. **QF and bigger (×8 / ×12 / ×16):** this is where the table moves. Decide gamble vs safe by watching RIVAL_1:
-   - If RIVAL_1 is **playing safe / picks look like the obvious chalk** (gap staying frozen) → **gamble**: back your own confident, differentiated scoreline (or run `--strategy contrarian`). Safe here = 0% chance to pass him.
-   - If RIVAL_1 is **gambling** (taking unobvious scores) → **play safe** (`exacts`): he's only +1, so a missed gamble drops him below you. Let his variance sink him.
-   - If you can't tell → **default to gambling the QF+** (the robust choice; never leaves you at 0%).
-4. **Draws:** when GoalNet leans even/tight, pick **1-1** (most common real scoreline). Don't hedge a draw into a favourite's win-score.
-5. **Favourites:** prefer **2-1 or 1-0** over 2-0 (2-0 is the classic near-miss).
+The `--round` flag now applies steps 1–3 automatically. Just pass the correct round (and `--rival` if you've read RIVAL_1). The logic it encodes:
+1. Pass `--round <round>` for the fixture's stage. The tool maps it to a multiplier and picks the strategy.
+2. **Group / R32 / R16 (×1–×4):** → `exacts` (safe exact-hunting). Protect points; don't gamble here.
+3. **QF and bigger (×8 / ×12 / ×16):** this is where the table moves. The tool decides by `--rival`:
+   - `--rival safe` or `unknown` → **gamble** (differentiated exact). Safe here = 0% chance to pass RIVAL_1.
+   - `--rival gambling` → **stay safe** (`exacts`): RIVAL_1 is only +1, so a missed gamble drops him below you — let his variance sink him.
+   - Default `--rival unknown` gambles QF+ (the robust, never-0% choice).
+4. **Draws** (handled inside `exacts`/`gamble`): GoalNet+empirical favours **1-1** when even. Don't hedge a draw into a favourite's win-score.
+5. **Favourites:** the corrected grid already prefers **2-1 / 1-0** over 2-0 (the classic near-miss).
+
+Example: `python src/predict_game.py ESP-FRA --round sf --rival gambling` → ×12 game, RIVAL_1 gambling → tool plays `exacts` (safe) and prints the reason.
 
 ## 6. Hard rules
 - Always submit a scoreline GoalNet's grid supports (top-5); never a score with ~0 probability, even when "gambling" — gamble = your 2nd/3rd-best read, not a wild punt.

@@ -66,16 +66,43 @@ def pick_strategy(P, strategy="chalk", beta=0.25, q=0.6):
         # 165 pts). For a player whose gap is exact-conversion, not outcomes.
         Q = 0.70 * P + 0.30 * _empirical_grid(); Q = Q / Q.sum()
         i, j = np.unravel_index(np.argmax(Q), Q.shape); return (int(i), int(j))
+    if strategy == "gamble":
+        # differentiated exact: the 2nd-most-likely exact on the corrected grid — decorrelated from the top
+        # pick rivals play. For high-multiplier knockout games (QF+) where you must separate from the field.
+        Q = 0.70 * P + 0.30 * _empirical_grid(); Q = Q / Q.sum()
+        order = np.argsort(Q.ravel())[::-1]; idx = int(order[1] if order.size > 1 else order[0])
+        return (idx // Q.shape[1], idx % Q.shape[1])
     raise ValueError(strategy)
 
 
 def main():
     keys = [a for a in sys.argv[1:] if not a.startswith("--")]
     if not keys:
-        print("usage: predict_game.py NED-SWE [KEY ...] [--strategy chalk|exact|contrarian|exacts] [--beta 0.25] [--q 0.6]"); return
+        print("usage: predict_game.py NED-SWE [KEY ...] [--round group|r32|r16|qf|sf|final] "
+              "[--rival unknown|safe|gambling] [--strategy chalk|exacts|contrarian|gamble] [--beta 0.25] [--q 0.6]")
+        return
     def _arg(k, d): return sys.argv[sys.argv.index(k) + 1] if k in sys.argv else d
-    global STRATEGY, BETA, QFIELD
-    STRATEGY = _arg("--strategy", "chalk"); BETA = float(_arg("--beta", "0.25")); QFIELD = float(_arg("--q", "0.6"))
+    global STRATEGY, BETA, QFIELD, ROUNDINFO
+    BETA = float(_arg("--beta", "0.25")); QFIELD = float(_arg("--q", "0.6"))
+    # --round auto-applies the league decision logic (PREDICTION_GUIDE.md): safe exact-hunting through the
+    # low-multiplier rounds; from QF up (x8+) gamble (differentiate) UNLESS the rival is already gambling, in
+    # which case stay safe and let their variance sink them. Explicit --strategy always overrides.
+    ROUND_MULT = {"group": 1, "r32": 2, "r16": 4, "qf": 8, "sf": 12, "final": 16}
+    rnd = (_arg("--round", "") or "").lower(); rival = (_arg("--rival", "unknown") or "unknown").lower()
+    ROUNDINFO = ""
+    if "--strategy" in sys.argv:
+        STRATEGY = _arg("--strategy", "chalk")
+    elif rnd in ROUND_MULT:
+        mult = ROUND_MULT[rnd]
+        if mult >= 8 and rival != "gambling":
+            STRATEGY = "gamble"; why = f"x{mult} {rnd.upper()}, rival={rival} -> differentiate"
+        elif mult >= 8:
+            STRATEGY = "exacts"; why = f"x{mult} {rnd.upper()}, rival gambling -> stay safe, let them swing"
+        else:
+            STRATEGY = "exacts"; why = f"x{mult} {rnd.upper()} -> safe exact-hunting"
+        ROUNDINFO = f"  [round {rnd.upper()} x{mult}: {why}]"
+    else:
+        STRATEGY = "exacts"   # league default: hunt exacts
     ck = ROOT / "data" / "goalnet.pt"
     if not ck.exists():
         print("no data/goalnet.pt — run: python src/train_goals.py --full  (once)"); return
@@ -174,7 +201,7 @@ def main():
         ho = tg.hda_from_P(P); pk = pick_strategy(P, STRATEGY, BETA, QFIELD)
         flat = sorted(((P[i, j], i, j) for i in range(tg.MAXG + 1) for j in range(tg.MAXG + 1)), reverse=True)
         res = Rz.get(key, {})
-        print(f"\n=== {hc} (home) vs {ac} (away)  [status={res.get('status','?')}, imputed {i1+i2}/22] ===")
+        print(f"\n=== {hc} (home) vs {ac} (away)  [status={res.get('status','?')}, imputed {i1+i2}/22] ==={ROUNDINFO}")
         print(f"  xG: {hc} {lhh:.2f} - {laa:.2f} {ac}   |   {hc} win {ho[0]*100:.0f}%  draw {ho[1]*100:.0f}%  {ac} win {ho[2]*100:.0f}%")
         print(f"  {STRATEGY} pick: {hc} {pk[0]}-{pk[1]} {ac}   top: " +
               "  ".join(f"{i}-{j} {p*100:.0f}%" for p, i, j in flat[:5]))
