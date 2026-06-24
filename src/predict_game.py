@@ -37,12 +37,18 @@ def _ev_grid(P):
 
 _EMP = None
 def _empirical_grid():
-    """Historical final-score distribution (cached), capped to the MAXG grid — real scores cluster on 1-1,
-    1-0, 2-1, ... which independent double-Poisson under-weights. Used by the exact-hunting strategy."""
+    """Historical final-score distribution (cached), capped to the MAXG grid — real scores cluster on 1-0,
+    1-1, 0-0, ... which independent double-Poisson under-weights. NATIONAL-only: international football is
+    tighter/lower-scoring than club (1-0 edges 1-1; more 0-0/2-0), so the prior matches the WC games we bet.
+    --club-prior reverts to the all-matches distribution. Used by the exact-hunting / gamble strategies."""
     global _EMP
     if _EMP is None:
         con = db.connect(); M = tg.MAXG + 1; E = np.zeros((M, M))
-        for h, a in con.execute("SELECT home_goals,away_goals FROM match WHERE home_goals IS NOT NULL"):
+        natl = "--club-prior" not in sys.argv
+        q = "SELECT home_goals,away_goals FROM match WHERE home_goals IS NOT NULL"
+        if natl:
+            q += " AND competition_id IN (%s)" % ",".join(str(c) for c in sorted(tg.NATc))
+        for h, a in con.execute(q):
             E[min(h, tg.MAXG), min(a, tg.MAXG)] += 1
         _EMP = E / E.sum()
     return _EMP
