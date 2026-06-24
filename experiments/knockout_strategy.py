@@ -14,7 +14,7 @@ import eval_harness as H
 import e3_gametheory as E3
 
 # remaining knockout multiplier schedule (one pick per fixture you make)
-SCHED = [2] * 16 + [4] * 8 + [8] * 4 + [12] * 2 + [16] * 1     # R32..Final, "2-16x"
+SCHED = [2] * 16 + [4] * 8 + [8] * 4 + [16] * 2 + [32] * 1     # R32..Final (real league: QF8/SF16/Final32)
 START = {"you": (34, 3), "pizzi": (35, 4), "yak": (33, 5)}      # (points, exacts)
 
 

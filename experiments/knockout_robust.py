@@ -12,7 +12,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 import eval_harness as H
 import e3_gametheory as E3
 
-SCHED = [2] * 16 + [4] * 8 + [8] * 4 + [12] * 2 + [16] * 1
+SCHED = [2] * 16 + [4] * 8 + [8] * 4 + [16] * 2 + [32] * 1
 START = {"you": (34, 3), "pizzi": (35, 4), "yak": (33, 5)}
 
 

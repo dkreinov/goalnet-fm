@@ -87,7 +87,7 @@ def main():
     # --round auto-applies the league decision logic (PREDICTION_GUIDE.md): safe exact-hunting through the
     # low-multiplier rounds; from QF up (x8+) gamble (differentiate) UNLESS the rival is already gambling, in
     # which case stay safe and let their variance sink them. Explicit --strategy always overrides.
-    ROUND_MULT = {"group": 1, "r32": 2, "r16": 4, "qf": 8, "sf": 12, "final": 16}
+    ROUND_MULT = {"group": 1, "r32": 2, "r16": 4, "qf": 8, "sf": 16, "final": 32}   # real league (final exact=64)
     rnd = (_arg("--round", "") or "").lower(); rival = (_arg("--rival", "unknown") or "unknown").lower()
     ROUNDINFO = ""
     if "--strategy" in sys.argv:
@@ -177,10 +177,37 @@ def main():
         elif a.startswith("--lineups="): lp = Path(a.split("=", 1)[1])
     L = json.load(open(lp, encoding="utf-8"))
     Rz = json.load(open(WC / "results.json", encoding="utf-8"))
+
+    def team_prev_xi(code):
+        """That team's XI from its most recent FINISHED game in lineups.json (roster-attributed), or None.
+        Lets us predict UPCOMING fixtures (not yet in lineups.json) from each side's last lineup."""
+        cands = []
+        for k, e in L.items():
+            fin = e.get("state") == "finished" or (Rz.get(k) or {}).get("status") == "finished"
+            if not fin or code not in k.split("-"):
+                continue
+            hx, ax = e.get("home_xi") or [], e.get("away_xi") or []
+            if len(hx) < 11 or len(ax) < 11:
+                continue
+            cands.append(((Rz.get(k) or {}).get("kickoff", 0), hx, ax))
+        if not cands:
+            return None
+        cands.sort(key=lambda t: t[0], reverse=True)
+        _, hx, ax = cands[0]; rs = rosters.get(code, set())
+        ov = lambda xi: sum(1 for p in xi if db.norm(p.get("full", "")).split()[-1:] and db.norm(p.get("full", "")).split()[-1] in rs)
+        return hx if ov(hx) >= ov(ax) else ax
+
     for key in keys:
-        gg = L.get(key)
+        gg = L.get(key); fallback = False
         if not gg:
-            print(f"\n{key}: not in lineups.json"); continue
+            ca0, cb0 = key.split("-")
+            hx, ax = team_prev_xi(ca0), team_prev_xi(cb0)
+            if hx and ax:
+                gg = {"home_xi": hx, "away_xi": ax}; fallback = True
+            else:
+                miss = [c for c, x in ((ca0, hx), (cb0, ax)) if not x]
+                print(f"\n{key}: not in lineups.json and no previous XI for {', '.join(miss)} — can't predict yet")
+                continue
         ca0, cb0 = key.split("-")
         hc = detect(gg.get("home_xi", []), ca0, cb0)     # actual team of home_xi (label-swap safe)
         ac = cb0 if hc == ca0 else ca0
@@ -201,7 +228,8 @@ def main():
         ho = tg.hda_from_P(P); pk = pick_strategy(P, STRATEGY, BETA, QFIELD)
         flat = sorted(((P[i, j], i, j) for i in range(tg.MAXG + 1) for j in range(tg.MAXG + 1)), reverse=True)
         res = Rz.get(key, {})
-        print(f"\n=== {hc} (home) vs {ac} (away)  [status={res.get('status','?')}, imputed {i1+i2}/22] ==={ROUNDINFO}")
+        fbnote = "  [FALLBACK: previous-game XIs, not the confirmed lineup]" if fallback else ""
+        print(f"\n=== {hc} (home) vs {ac} (away)  [status={res.get('status','?')}, imputed {i1+i2}/22] ==={ROUNDINFO}{fbnote}")
         print(f"  xG: {hc} {lhh:.2f} - {laa:.2f} {ac}   |   {hc} win {ho[0]*100:.0f}%  draw {ho[1]*100:.0f}%  {ac} win {ho[2]*100:.0f}%")
         print(f"  {STRATEGY} pick: {hc} {pk[0]}-{pk[1]} {ac}   top: " +
               "  ".join(f"{i}-{j} {p*100:.0f}%" for p, i, j in flat[:5]))

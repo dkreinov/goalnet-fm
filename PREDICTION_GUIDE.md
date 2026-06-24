@@ -5,7 +5,7 @@ Self-contained instructions for generating fantasy-league scoreline picks. Read 
 ## 1. Who / what / goal
 - You are picking for **YOU** in a 10-player WC2026 fantasy league.
 - **Per-game scoring:** exact score = 3, correct outcome (W/D/L) only = 1, wrong = 0. **Ties break on exact count.**
-- **Knockout multipliers:** group games ×1; knockouts escalate — R32 ×2, R16 ×4, **QF ×8, SF ×12, Final ×16** (confirm the league's real values if shown).
+- **Knockout multipliers (real league):** group ×1, R32 ×2, R16 ×4, **QF ×8, SF ×16, Final ×32**. So a Final correct = 32 and a **Final exact = 64** — one Final exact alone more than erases an 8-point gap. The Final (then SF) is the single highest-leverage game; spend your best differentiated exact read there.
 - **Futures (locked, paid at the end):** winner = +50 (YOU picked **Spain**), top scorer = +30 (YOU picked **Mbappé**).
 - **Goal:** finish #1.
 
@@ -18,6 +18,7 @@ Self-contained instructions for generating fantasy-league scoreline picks. Read 
 python src/predict_game.py KEY1 KEY2 ... --round <group|r32|r16|qf|sf|final> --rival <unknown|safe|gambling>
 ```
 - KEYs are team-code fixtures, e.g. `ESP-FRA BRA-ARG`. It prints, per game: the round/multiplier + reasoning, the xG, W/D/L %, the pick, and the top-5 scorelines with probabilities.
+- **Upcoming fixtures work.** If the fixture isn't in `lineups.json` yet (no confirmed XI), the tool falls back to each team's **previous-game XI** and tags the line `[FALLBACK: previous-game XIs ...]`. Once the real lineup is posted it's used automatically. So you can predict future games now; re-run near kickoff to upgrade to the confirmed XI.
 - **`--round` auto-applies all the decision logic in §5** — you normally only need `--round` (and `--rival` if you've read RIVAL_1). The tool picks the strategy for you and prints why.
 - Manual override (rarely needed): `--strategy <chalk|exacts|contrarian|gamble>` forces a specific pick rule and ignores `--round`.
   - `chalk` — points-optimal (safe). `exacts` — most likely exact, nudged to real scores (1-1, 2-1). `gamble` — 2nd-best differentiated exact. `contrarian` — EV-differentiated.
