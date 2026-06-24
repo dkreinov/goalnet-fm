@@ -48,6 +48,37 @@ def _empirical_grid():
     return _EMP
 
 
+def live_national_context(con, teams, results, fold=True):
+    """National Elo/form context, optionally updated with the FINISHED WC games from results.json so the model
+    reflects in-tournament form (no leakage for an upcoming game — every fed game is already played). A/B on
+    the games so far: +2 chalk pts / +1 exact / better RPS vs the frozen pre-tournament context. fold=False
+    reproduces the DB-only (pre-WC) context exactly. Returns (natctx_dict, n_games_folded)."""
+    from collections import defaultdict, deque
+    rows = con.execute(f"""SELECT home_club_id,away_club_id,home_goals,away_goals FROM match
+        WHERE competition_id IN {tuple(tg.NATc)} AND home_goals IS NOT NULL ORDER BY match_date,match_id""").fetchall()
+    elo = defaultdict(lambda: tg.BASE); form = defaultdict(lambda: deque(maxlen=5)); gd = defaultdict(lambda: deque(maxlen=5))
+    def upd(hc, ac, hg, ag):
+        eh, ea = elo[hc], elo[ac]
+        exp = 1 / (1 + 10 ** (-((eh + tg.HADV) - ea) / 400.0)); s = 1.0 if hg > ag else (0.5 if hg == ag else 0.0)
+        elo[hc] = eh + tg.K * (s - exp); elo[ac] = ea - tg.K * (s - exp)
+        ph = 3 if hg > ag else (1 if hg == ag else 0)
+        form[hc].append(ph); form[ac].append(3 - ph if ph != 1 else 1); gd[hc].append(hg - ag); gd[ac].append(ag - hg)
+    for hc, ac, hg, ag in rows:
+        upd(hc, ac, hg, ag)
+    nfold = 0
+    if fold:
+        fin = [(v.get("kickoff", 0), k, v) for k, v in results.items()
+               if v.get("status") == "finished" and v.get("hs") is not None]
+        for _, k, v in sorted(fin, key=lambda t: t[0]):
+            a, b = k.split("-"); ca, cb = teams.get(a), teams.get(b)
+            if ca is None or cb is None:
+                continue
+            upd(ca, cb, int(v["hs"]), int(v["as"])); nfold += 1
+    natctx = {cid: (elo[cid], float(np.mean(form[cid])) if form[cid] else 1.0,
+                    float(np.mean(gd[cid])) if gd[cid] else 0.0) for cid in elo}
+    return natctx, nfold
+
+
 def pick_strategy(P, strategy="chalk", beta=0.25, q=0.6):
     """chalk = max E(points) (production EV-pick). exact = argmax P. contrarian = max E(points) - beta*field-
     mass (E3): differentiate from a field that picks the chalk cell with prob q else samples the grid. Raises
@@ -116,12 +147,17 @@ def main():
         nt = tg.GoalNet(A, nctx); nt.load_state_dict(st); nt.eval(); nets.append(nt)
 
     con = db.connect()
-    natctx = tg.national_context(con)
     name2cid = {r[1]: r[0] for r in con.execute("SELECT club_id,name FROM club")}
     teams = {}
     for f in (WC / "teams").glob("*.json"):
         t = json.load(open(f, encoding="utf-8"))["team"]
         teams[t["code"]] = name2cid.get(tg.NAME_FIX.get(t["name"], t["name"]))
+    # tournament-aware context: fold the finished WC games into Elo/form so knockouts reflect in-tournament
+    # form (--no-live-form to use the frozen pre-WC context). See experiments/context_refresh_ab.py.
+    _res = json.load(open(WC / "results.json", encoding="utf-8"))
+    natctx, _nf = live_national_context(con, teams, _res, fold="--no-live-form" not in sys.argv)
+    if "--no-live-form" not in sys.argv:
+        print(f"(live form: folded {_nf} finished WC games into team Elo/form)")
     EDRANK = {3: 10, 4: 9, 1: 8, 5: 7, 10: 6, 2: 5, 6: 4, 7: 3, 8: 2, 9: 1}   # FM26 first, else newest
     snap = {}
     for sid, fmv, ca, nm in con.execute("SELECT s.snapshot_id,s.fm_version_id,s.ca,p.norm_name "
