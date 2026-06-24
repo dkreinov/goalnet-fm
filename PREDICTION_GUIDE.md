@@ -61,7 +61,7 @@ This gates §5: only open up (gamble QF+) to the degree the verdict says. If you
 The `--round` flag now applies steps 1–3 automatically. Just pass the correct round (and `--rival` if you've read RIVAL_1). The logic it encodes:
 1. Pass `--round <round>` for the fixture's stage. The tool maps it to a multiplier and picks the strategy.
 2. **Group / R32 / R16 (×1–×4):** → `exacts` (safe exact-hunting). Protect points; don't gamble here.
-3. **QF and bigger (×8 / ×12 / ×16):** this is where the table moves. The tool decides by `--rival`:
+3. **QF and bigger (×8 / ×16 / ×32):** this is where the table moves. The tool decides by `--rival`:
    - `--rival safe` or `unknown` → **gamble** (differentiated exact). Safe here = 0% chance to pass RIVAL_1.
    - `--rival gambling` → **stay safe** (`exacts`): RIVAL_1 is only +1, so a missed gamble drops him below you — let his variance sink him.
    - Default `--rival unknown` gambles QF+ (the robust, never-0% choice).
@@ -81,3 +81,41 @@ Example: `python src/predict_game.py ESP-FRA --round sf --rival gambling` → ×
 - `experiments/knockout_robust.py` — pursuit-game matrix vs RIVAL_1's behaviour (do the opposite of his variance).
 - `experiments/catchup.py` — deficit/rounds catch-up curves.
 - Full record: `RESULTS_WC2026.md`. Standings/rivals: memory `wc2026-league-strategy.md`.
+
+## 8. Handoff / integration (for the agent wiring auto_bet)
+auto_bet keeps doing everything it already does (auth, lineup fallback, submit). The ONLY change is **which
+strategy flag it passes per fixture** — replace the hardcoded `--strategy chalk` in `auto_bet.predict()`.
+
+**Per-fixture model call** (already what `predict()` runs, minus the flag):
+```
+python src/predict_game.py <HOME-AWAY> --round <group|r32|r16|qf|sf|final>
+```
+Parse the pick from stdout (the existing regex works): `\bpick:\s+([A-Z]{3})\s+(\d+)-(\d+)\s+([A-Z]{3})`
+→ (home_code, h, a, away_code); orient to the fixture's home/away. predict_game already loads GoalNet, folds
+live WC form into context, and falls back to previous-game XIs for unplayed fixtures.
+
+**Strategy selection** (the only new logic — run the two helpers once per pass, then branch per fixture):
+```
+python src/read_standings.py          # writes standings.json (live table)
+python experiments/decide_risk.py      # prints "  >>> PROTECT / NARROW LEAD / CHASE ..." + a guard line
+
+per fixture f (f.round from the fixtures API):
+  if guard line says Spain OUT:            flag = "--strategy gamble"      # +50 gone -> gamble everywhere
+  elif verdict in {PROTECT, NARROW LEAD}:  flag = "--strategy exacts"      # safe everywhere, even knockouts
+  else:  # CHASE                            flag = f"--round {f.round}"     # safe early, gamble QF+
+```
+
+**Phase-1 simplification (current):** top-scorer ignored; in practice pass **`--round <f.round>`** on every
+fixture and let the verdict only override to force-safe (PROTECT) or force-gamble (Spain out). The verdict's
+one soft input is Spain's win probability in `decide_risk.py` (`P_WIN["Spain"]`) — keep it current.
+
+**Tool outputs the integration depends on:**
+| call | gives |
+|---|---|
+| `src/read_standings.py` | `standings.json`: rows `{nick,user_id,pts,ex,cor,wr,winner,scorer,is_me}` + `finished_fixtures` |
+| `experiments/decide_risk.py` | effective table + a `>>> verdict` line + a guard line |
+| `src/predict_game.py <KEY> --round <r>` | the `... pick: HC h-a AC` line (+ xG, W/D/L, top-5); `--debug` adds model/history/blended breakdown |
+
+predict_game flags: `--round` · `--rival unknown|safe|gambling` · `--strategy chalk|exacts|gamble|contrarian`
+· `--no-live-form` · `--club-prior` · `--debug` · `--lineups PATH`. Do NOT run `train_goals.py` (model is
+trained; `data/goalnet.pt` is live).
