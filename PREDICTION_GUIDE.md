@@ -45,6 +45,18 @@ Standings as of 2026-06-23 (per-game pts / exacts — winner pick / scorer pick)
 - The **draw hole** is the biggest leak: GoalNet/chalk nails almost no drawn games as exacts. The `exacts` strategy fixes this by favouring 1-1.
 - **Gamble-vs-safe is a pursuit game vs RIVAL_1:** if he plays safe you must gamble (QF+); if he gambles, you stay safe and let his variance sink him. The `--rival` flag encodes this.
 
+## 4b. Standing-aware risk (run once per matchday, before picking)
+"On top" only counts if your futures land. Compute your **effective** standing (current pts + P(your winner)×50 + P(your scorer)×30, for everyone) and let it set how aggressive to be:
+```
+python experiments/decide_risk.py --games-left <N>
+```
+Update `STANDINGS` and the `P_WIN` / `P_SCORER` odds inside the script to current reality first. It prints the effective table and a verdict:
+- **PROTECT** (effective leader with a cushion) → play safe everywhere (`--strategy exacts`); do NOT add variance.
+- **NARROW LEAD** → mostly safe; mirror your nearest chaser.
+- **CHASE** (effectively behind) → gamble on the high-multiplier rounds; harder the bigger the gap-per-game.
+
+This gates §5: only open up (gamble QF+) to the degree the verdict says. If you're effectively top, stay safe even in the knockouts.
+
 ## 5. Per-game decision procedure
 The `--round` flag now applies steps 1–3 automatically. Just pass the correct round (and `--rival` if you've read RIVAL_1). The logic it encodes:
 1. Pass `--round <round>` for the fixture's stage. The tool maps it to a multiplier and picks the strategy.
