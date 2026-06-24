@@ -7,20 +7,31 @@ P(your scorer)*30, computed for every player (rivals' futures count too). Then:
 Maps the verdict to a predict_game --strategy. Edit STANDINGS / ODDS to current reality (or pass --odds).
 Usage: python experiments/decide_risk.py [--me YOU] [--games-left 12]
 """
-import sys
+import sys, json
+from pathlib import Path
 
-# current per-game standings (pts, exacts, winner-pick, scorer-pick) — update as the table moves
+# LIVE standings come from standings.json (run `python src/read_standings.py` first). Fallback below is a
+# stale snapshot used only if that file is missing.
 STANDINGS = [
-    ("RIVAL_3", 42, 9, "Netherlands", "Haaland"),
-    ("RIVAL_4",    41, 7, "Argentina",   "Messi"),
-    ("RIVAL_5",38, 7, "France",      "Mbappé"),
-    ("RIVAL_6",38, 7, "Argentina",   "Olise"),
-    ("RIVAL_7",   37, 5, "Spain",       "Kane"),
-    ("RIVAL_1",  35, 4, "Spain",       "Mbappé"),
-    ("YOU", 34, 3, "Spain",       "Mbappé"),
-    ("RIVAL_2",    33, 5, "Spain",       "Mbappé"),
-    ("RIVAL_8",  24, 2, "Brazil",      "Endrick"),
+    ("RIVAL_3", 42, 9, "Netherlands", "Haaland"), ("RIVAL_4", 41, 7, "Argentina", "Messi"),
+    ("RIVAL_5", 38, 7, "France", "Mbappé"), ("RIVAL_6", 38, 7, "Argentina", "Olise"),
+    ("RIVAL_7", 37, 5, "Spain", "Kane"), ("RIVAL_1", 35, 4, "Spain", "Mbappé"),
+    ("YOU", 34, 3, "Spain", "Mbappé"), ("RIVAL_2", 33, 5, "Spain", "Mbappé"),
+    ("RIVAL_8", 24, 2, "Brazil", "Endrick"),
 ]
+
+
+def load_standings():
+    """(rows, me_nick) from live standings.json if present, else the stale fallback above."""
+    f = Path(__file__).resolve().parent.parent / "standings.json"
+    if f.exists():
+        d = json.load(open(f, encoding="utf-8")); me = "YOU"
+        rows = []
+        for r in d["rows"]:
+            rows.append((r["nick"], r["pts"], r["ex"], r.get("winner"), r.get("scorer")))
+            if r.get("is_me"): me = r["nick"]
+        return rows, me, d.get("finished_fixtures")
+    return STANDINGS, "YOU", None
 # live futures probabilities — UPDATE to current odds (these are rough placeholders)
 P_WIN = {"Spain": 0.24, "France": 0.18, "Argentina": 0.15, "Brazil": 0.12, "Netherlands": 0.08}
 P_SCORER = {"Mbappé": 0.22, "Haaland": 0.12, "Messi": 0.06, "Kane": 0.10, "Olise": 0.04, "Endrick": 0.05}
@@ -29,9 +40,13 @@ WIN_PTS, SCORER_PTS = 50, 30
 
 def main():
     def arg(k, d): return type(d)(sys.argv[sys.argv.index(k) + 1]) if k in sys.argv else d
-    me = arg("--me", "YOU"); games_left = arg("--games-left", 12)
+    standings, me_default, nfin = load_standings()
+    me = arg("--me", me_default)
+    games_left = arg("--games-left", (103 - nfin) if nfin else 12)
+    if nfin is not None:
+        print(f"(live standings: {nfin} fixtures finished, ~{103 - nfin} left)", flush=True)
     rows = []
-    for name, pts, ex, win, scorer in STANDINGS:
+    for name, pts, ex, win, scorer in standings:
         eff = pts + P_WIN.get(win, 0.0) * WIN_PTS + P_SCORER.get(scorer, 0.0) * SCORER_PTS
         rows.append([name, pts, ex, win, scorer, eff])
     rows.sort(key=lambda r: -r[5])
