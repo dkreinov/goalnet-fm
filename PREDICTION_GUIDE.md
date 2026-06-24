@@ -24,9 +24,25 @@ python src/predict_game.py KEY1 KEY2 ... --round <group|r32|r16|qf|sf|final> --r
 - Default with no flags = `exacts`.
 
 ## 4. Strategic situation (why these rules)
+Standings as of 2026-06-23 (per-game pts / exacts — winner pick / scorer pick):
+
+| # | player | pts | exacts | winner | scorer |
+|---|---|---|---|---|---|
+| 1 | RIVAL_3 | 42 | 9 | Netherlands | Haaland |
+| 2 | RIVAL_4 | 41 | 7 | Argentina | Messi |
+| 3 | RIVAL_5 | 38 | 7 | France | Mbappé |
+| 4 | RIVAL_6 | 38 | 7 | Argentina | Olise |
+| 5 | RIVAL_7 | 37 | 5 | Spain | Kane |
+| 6 | RIVAL_1 | 35 | 4 | **Spain** | **Mbappé** |
+| 7 | **YOU (you)** | 34 | 3 | **Spain** | **Mbappé** |
+| 8 | RIVAL_2 | 33 | 5 | **Spain** | **Mbappé** |
+| 9 | RIVAL_8 | 24 | 2 | Brazil | Endrick |
+
 - YOU's gap is **purely exact-score conversion**: league-best outcome reading (25 correct) but fewest exacts of the contenders (3). Do **NOT** go contrarian on outcomes — that throws away the one elite edge.
-- Because YOU, **RIVAL_1**, and **RIVAL_2** all picked **Spain + Mbappé**, the +80 futures wash among them. The title is really a **3-way per-game race vs RIVAL_1 (ahead, +1 pt / +1 exact) and RIVAL_2 (behind on pts, ahead on exacts)**. The nominal leader (RIVAL_3, Netherlands+Haaland) is irrelevant unless the Netherlands win.
+- YOU, **RIVAL_1**, and **RIVAL_2** all picked **Spain + Mbappé**, so the +80 futures wash among them. The title is really a **3-way per-game race vs RIVAL_1 (ahead +1 pt / +1 exact) and RIVAL_2 (behind on pts, ahead on exacts; ties break on exacts → effectively behind both)**. The nominal leader (RIVAL_3) is irrelevant unless the Netherlands win.
+- Everything is conditional on **Spain winning + Mbappé top scorer** (the only path to #1). Play every pick as if that holds.
 - The **draw hole** is the biggest leak: GoalNet/chalk nails almost no drawn games as exacts. The `exacts` strategy fixes this by favouring 1-1.
+- **Gamble-vs-safe is a pursuit game vs RIVAL_1:** if he plays safe you must gamble (QF+); if he gambles, you stay safe and let his variance sink him. The `--rival` flag encodes this.
 
 ## 5. Per-game decision procedure
 The `--round` flag now applies steps 1–3 automatically. Just pass the correct round (and `--rival` if you've read RIVAL_1). The logic it encodes:
