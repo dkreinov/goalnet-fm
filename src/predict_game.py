@@ -269,6 +269,10 @@ def main():
         laa = float((P.sum(0) * np.arange(P.shape[1])).sum())
         ho = tg.hda_from_P(P); pk = pick_strategy(P, STRATEGY, BETA, QFIELD)
         flat = sorted(((P[i, j], i, j) for i in range(tg.MAXG + 1) for j in range(tg.MAXG + 1)), reverse=True)
+        if "--debug" in sys.argv:
+            E = _empirical_grid(); Q = 0.70 * P + 0.30 * E; Q = Q / Q.sum()
+            for (i, j) in [(1, 1), (1, 0), (0, 1), (0, 0)]:
+                print(f"    dbg {i}-{j}: model P={P[i,j]*100:5.2f}%  hist={E[i,j]*100:5.2f}%  blended Q={Q[i,j]*100:5.2f}%")
         res = Rz.get(key, {})
         fbnote = "  [FALLBACK: previous-game XIs, not the confirmed lineup]" if fallback else ""
         print(f"\n=== {hc} (home) vs {ac} (away)  [status={res.get('status','?')}, imputed {i1+i2}/22] ==={ROUNDINFO}{fbnote}")
