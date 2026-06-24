@@ -36,6 +36,12 @@ def load_standings():
 P_WIN = {"Spain": 0.24, "France": 0.18, "Argentina": 0.15, "Brazil": 0.12, "Netherlands": 0.08}
 P_SCORER = {"Mbappé": 0.22, "Haaland": 0.12, "Messi": 0.06, "Kane": 0.10, "Olise": 0.04, "Endrick": 0.05}
 WIN_PTS, SCORER_PTS = 50, 30
+SCORER_ON = False   # PHASE 1: winner-only. Ignore the top-scorer +30 until a later phase.
+
+# Reality guards — the current tactic is valid only while these hold. Set from the live bracket/scorer race.
+STATUS = {"spain_in": True,        # Spain still in the tournament -> your +50 is live
+          "france_in": True,       # France still in -> RIVAL_5 (France+Mbappé) is a live threat
+          "mbappe_leading": False} # Mbappé NOT leading the golden boot yet
 
 
 def main():
@@ -47,7 +53,9 @@ def main():
         print(f"(live standings: {nfin} fixtures finished, ~{103 - nfin} left)", flush=True)
     rows = []
     for name, pts, ex, win, scorer in standings:
-        eff = pts + P_WIN.get(win, 0.0) * WIN_PTS + P_SCORER.get(scorer, 0.0) * SCORER_PTS
+        eff = pts + P_WIN.get(win, 0.0) * WIN_PTS
+        if SCORER_ON:
+            eff += P_SCORER.get(scorer, 0.0) * SCORER_PTS
         rows.append([name, pts, ex, win, scorer, eff])
     rows.sort(key=lambda r: -r[5])
     print("=== effective table (current pts + E[futures]) ===", flush=True)
@@ -74,12 +82,24 @@ def main():
                    f"GAMBLE {aggr} on high-multiplier games (--round qf/sf/final differentiates). "
                    f"Do the OPPOSITE of {rival[0] if rival else 'your rival'}'s variance: safe if they gamble.")
     print(f"\n  >>> {verdict}", flush=True)
-    # futures reality check
-    if r[3] in P_WIN and P_WIN[r[3]] < 0.20:
-        print(f"  NOTE: your winner pick ({r[3]}) is only ~{P_WIN[r[3]]*100:.0f}% — your +50 is unlikely; "
-              f"discount your 'real' position and lean more aggressive.", flush=True)
+    if not SCORER_ON:
+        print("  (phase 1: winner-only; top-scorer +30 ignored for now)", flush=True)
+    # reality guards — the verdict above is only valid while these hold
+    if not STATUS["spain_in"]:
+        print("  *** CHANGE TACTICS: Spain is OUT — your +50 is gone. You're now effectively far behind; "
+              "GAMBLE hard on every multiplier game. Re-run with real winner odds.", flush=True)
+    else:
+        flips = []
+        if not STATUS["france_in"]:
+            flips.append("France OUT (RIVAL_5's +50 collapses → you move clearly ahead → protect harder)")
+        if STATUS["mbappe_leading"]:
+            flips.append("Mbappé now leading the golden boot (re-enable scorer bonus next phase)")
+        if flips:
+            print("  RE-EVALUATE — a guard flipped: " + "; ".join(flips), flush=True)
+        else:
+            print("  guards OK: Spain in, France in, Mbappé not leading → current tactic stands.", flush=True)
     if rank > 1 and leader[3] == r[3]:
-        print(f"  NOTE: the effective leader also bet {r[3]} — your futures WASH vs them; it's a pure per-game race.", flush=True)
+        print(f"  NOTE: the effective leader also bet {r[3]} — your futures WASH vs them; pure per-game race.", flush=True)
 
 
 if __name__ == "__main__":
