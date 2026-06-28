@@ -30,7 +30,10 @@ ANON = ("***REMOVED***"
         "***REMOVED***")
 BASE = "***REMOVED***"
 WINDOW = 80   # start considering a game this many minutes before kickoff
-LOCK = 60     # never write within this many minutes of kickoff (app lock)
+LOCK = 10     # stop writing this many minutes before KO. Lock-test (2026-06-23, POR-UZB @48m) proved the
+              # app does NOT enforce a 60-min lock — writes are accepted ~to kickoff. Lowered 60->10 so the
+              # bot keeps re-checking and upgrades fallback->confirmed XI whenever a real lineup posts; the
+              # 10-min margin is just clock-skew safety vs the actual kickoff lock.
 
 def log(m): open(LOG, "a", encoding="utf-8").write(f"{datetime.datetime.now():%Y-%m-%d %H:%M} | {m}\n")
 
@@ -123,11 +126,15 @@ def team_prev_xi(code, lu, results, rosters):
     ov = lambda xi: sum(1 for p in xi if _surn(p.get("full", "")) in rs)
     return hx if ov(hx) >= ov(ax) else ax
 
-def predict(key, lineups_path=None):
-    # Pin --strategy chalk (= production max-EV pick) so a future change to predict_game's DEFAULT
-    # strategy can't silently alter our bets. Match the generic "<strategy> pick:" line (predict_game
-    # renamed "EV pick:" -> "chalk pick:" in da96a15; matching `\w+ pick:` survives further relabels).
-    cmd = [PY, os.path.join(FM, "src", "predict_game.py"), key, "--strategy", "chalk"]
+ROUNDS = {"group", "r32", "r16", "qf", "sf", "final"}
+
+def predict(key, lineups_path=None, round_=None):
+    # Apply the PREDICTION_GUIDE pick strategy via --round (group/R32/R16 -> safe draw-aware exacts;
+    # QF+ -> gamble). A known round maps the whole strategy; anything else falls back to --strategy exacts
+    # (safe default) so we never emit an unmapped --round. The generic "<strategy> pick:" regex below
+    # matches whatever label predict_game prints (exacts/gamble/chalk/...).
+    cmd = [PY, os.path.join(FM, "src", "predict_game.py"), key]
+    cmd += (["--round", round_] if round_ in ROUNDS else ["--strategy", "exacts"])
     if lineups_path: cmd += ["--lineups", lineups_path]
     try:
         p = subprocess.run(cmd, capture_output=True, text=True, timeout=120, cwd=FM)
@@ -145,13 +152,14 @@ def model_pick(f, lu, results, rosters):
         e = lu.get(cand)
         if e and len(e.get("home_xi") or []) >= 11 and len(e.get("away_xi") or []) >= 11 and e.get("state") == "notstarted":
             realkey = cand; break
+    rnd = f.get("round")
     if realkey:
-        tag, pred = "confirmed", predict(realkey)
+        tag, pred = "confirmed", predict(realkey, round_=rnd)
     else:
         hx, ax = team_prev_xi(H, lu, results, rosters), team_prev_xi(A, lu, results, rosters)
         if not (hx and ax): return None
         json.dump({f"{H}-{A}": {"home_xi": hx, "away_xi": ax, "state": "notstarted"}}, open(TMPLU, "w"))
-        tag, pred = "fallback", predict(f"{H}-{A}", TMPLU)
+        tag, pred = "fallback", predict(f"{H}-{A}", TMPLU, round_=rnd)
     if not pred: return None
     mh, hs, ascore, ma = pred
     if mh == H and ma == A: return hs, ascore, tag
@@ -236,14 +244,15 @@ def main(dry=False):
             e = lu.get(cand)
             if e and len(e.get("home_xi") or []) >= 11 and len(e.get("away_xi") or []) >= 11 and e.get("state") == "notstarted":
                 realkey = cand; break
+        rnd = f.get("round")                                        # group/r32/.../final -> strategy via --round
         if realkey:
-            tag, pred = "confirmed", predict(realkey)
+            tag, pred = "confirmed", predict(realkey, round_=rnd)
         else:                                                       # 2) fallback: previous-game XIs
             hx, ax = team_prev_xi(H, lu, results, rosters), team_prev_xi(A, lu, results, rosters)
             if not (hx and ax):
                 continue                                            # no prior game (e.g. matchday 1) -> wait
             json.dump({f"{H}-{A}": {"home_xi": hx, "away_xi": ax, "state": "notstarted"}}, open(TMPLU, "w"))
-            tag, pred = "fallback", predict(f"{H}-{A}", TMPLU)
+            tag, pred = "fallback", predict(f"{H}-{A}", TMPLU, round_=rnd)
         if not pred:
             log(f"{H}-{A} fid={fid}: no EV pick ({tag})"); continue
         mh, hs, ascore, ma = pred

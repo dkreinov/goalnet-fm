@@ -104,11 +104,18 @@ def pick_strategy(P, strategy="chalk", beta=0.25, q=0.6):
         Q = 0.70 * P + 0.30 * _empirical_grid(); Q = Q / Q.sum()
         i, j = np.unravel_index(np.argmax(Q), Q.shape); return (int(i), int(j))
     if strategy == "gamble":
-        # differentiated exact: the 2nd-most-likely exact on the corrected grid — decorrelated from the top
-        # pick rivals play. For high-multiplier knockout games (QF+) where you must separate from the field.
+        # differentiated exact that KEEPS the modal outcome — NEVER flips the W/D/L read (YOU's one edge
+        # is outcome-reading; the guide's hard rule is "only the scoreline within the read is up for grabs").
+        # Among scorelines of the most-likely outcome the field piles on the single likeliest; we take the
+        # 2nd-likeliest *within that same outcome* to decorrelate the scoreline without changing the bet.
+        # (Old behaviour took the global 2nd cell, which on coin-flip knockouts could jump to a draw/loss.)
         Q = 0.70 * P + 0.30 * _empirical_grid(); Q = Q / Q.sum()
-        order = np.argsort(Q.ravel())[::-1]; idx = int(order[1] if order.size > 1 else order[0])
-        return (idx // Q.shape[1], idx % Q.shape[1])
+        modal = int(np.argmax(tg.hda_from_P(P)))                       # 0 home win / 1 draw / 2 away win
+        cells = [(i, j) for i in range(Q.shape[0]) for j in range(Q.shape[1])
+                 if (0 if i > j else (1 if i == j else 2)) == modal]
+        cells.sort(key=lambda c: Q[c], reverse=True)
+        i, j = cells[1] if len(cells) > 1 else cells[0]               # 2nd-best within the modal outcome
+        return (int(i), int(j))
     raise ValueError(strategy)
 
 
