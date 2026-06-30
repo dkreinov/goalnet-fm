@@ -32,3 +32,6 @@ _tmp_lineups.json
 wc_locktest.json
 image_gen/lineup_probe.log
 plans/
+hevre_auth.json
+hevre_bot.log
+hevre_state.json

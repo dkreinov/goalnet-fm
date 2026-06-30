@@ -278,6 +278,52 @@ whole club≠national pattern. **Top productionisation candidate** for a WC-spec
    the broad set or only nudges the noisy natl slice. Stop chasing RPS; optimise the pick policy and collect
    the real league's competitor picks to calibrate the field (q).
 
+## Market-value & FIFA ablation study (2026-07-01) — the first feature that BEAT the baseline
+
+Question (user): join FIFA grades / market value with FM, A/B both lanes. Data needed NO scraping — club
+squad values are in `club_season_tm` (squad/top11 value, avg_age, squad_size per club-season, joins to matches
+by club_id+season), and the WC2026 team files already carry per-player `market_value_eur` + `fc_rating`
+(EA FC / FIFA) + `fifa_rank`/`elo` (parsed to `data/wc_team_strength.csv`, all 48 teams).
+
+**Study 1 — CLUB lane gate** (`experiments/value_ablation.py`, value as a context feature, retrain, held-out
+test; value coverage 42% of the 69k matches):
+
+| config | ALL rps | ALL pg | ALL ex | NATL rps | NATL pg | NATL ex |
+|---|---|---|---|---|---|---|
+| base ctx(10) | 0.2145 | 0.7108 | 1140 | 0.1701 | 0.7980 | 21 |
+| **+squad_value** | **0.2133** | **0.7115** | 1142 | 0.1721 | 0.8128 | 23 |
+| +top11_value | 0.2134 | 0.7089 | 1120 | **0.1680** | 0.8276 | 24 |
+| +all_value (squad+top11+age+size) | 0.2144 | 0.7069 | 1116 | 0.1757 | 0.8276 | 24 |
+
+**`+squad_value` is the first feature in the whole project to IMPROVE the broad ALL set** (rps 0.2145→0.2133)
+— every prior add (value_eur, wage, attendance, embeddings, …) hurt or was neutral. So team-level transfermarkt
+market value carries real, non-redundant signal beyond FM attrs + Elo/form. `top11_value` helps nationals more
+(rps 0.1680, +3 exacts) but costs club points; `all_value` over-dilutes. **Gate PASSED.**
+
+**Study 2 — NATIONAL/WC lane** (`experiments/value_national.py`, prediction-time strength priors blended with
+GoalNet on the 41 played WC games, leave-one-out calibrated; n=41 → low power, read direction):
+
+| signal | prior-only rps / pts / exact | GoalNet+signal rps / pts / exact |
+|---|---|---|
+| GoalNet (FM) baseline | — | 0.1753 / 35 / 5 |
+| squad_value | 0.1699 / 35 / 5 | 0.1686 / 35 / 5 |
+| **avg_fc (FIFA/EA rating)** | **0.1640 / 39 / 7** | 0.1648 / 35 / 5 |
+| fifa_rank | 0.1761 / 30 / 3 | 0.1737 / 30 / 3 |
+| elo (team_db) | 0.2179 / 28 / 3 | 0.1839 / 32 / 4 |
+
+**A simple FIFA-rating strength prior BEATS the full FM-GoalNet on the WC lane on every metric** (rps 0.164 vs
+0.175, 39 pts vs 35, 7 exacts vs 5); market value beats it on RPS too. On data-thin international games, FM
+grades under-capture team strength relative to FIFA/value — consistent with Peeters (squad value > Elo/FIFA-rank
+internationally). team_db Elo is a poor standalone prior.
+
+**Verdict / what to adopt:**
+- Market value & FIFA are the only *new* signals that beat baseline — adopt, don't dismiss as redundant.
+- CLUB/broad model: add `squad_value` to context (modest rps gain). Caveat: missing for national teams, so it
+  doesn't reach the WC games directly.
+- **WC betting (the goal): blend a FIFA-rating + market-value strength prior with GoalNet** — on the WC lane the
+  FC prior alone already outperforms GoalNet. Candidate for a GoalNet×FC×value WC predictor (n=41 caveat; verify
+  as more knockouts play). Top productionisation candidate after the national fine-tune.
+
 ## FM26 grade coverage (WC2026 squads)
 1,248 players across 48 squads (source: worldcup project). After the overnight nationality + by-club scrape:
 FM26-graded **1,047/1,248 (84%)**; **effective 90%** with edition-fallback (most-recent edition when FM26
