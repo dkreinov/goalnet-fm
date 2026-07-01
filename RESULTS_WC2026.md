@@ -316,13 +316,30 @@ GoalNet on the 41 played WC games, leave-one-out calibrated; n=41 → low power,
 grades under-capture team strength relative to FIFA/value — consistent with Peeters (squad value > Elo/FIFA-rank
 internationally). team_db Elo is a poor standalone prior.
 
-**Verdict / what to adopt:**
-- Market value & FIFA are the only *new* signals that beat baseline — adopt, don't dismiss as redundant.
-- CLUB/broad model: add `squad_value` to context (modest rps gain). Caveat: missing for national teams, so it
-  doesn't reach the WC games directly.
-- **WC betting (the goal): blend a FIFA-rating + market-value strength prior with GoalNet** — on the WC lane the
-  FC prior alone already outperforms GoalNet. Candidate for a GoalNet×FC×value WC predictor (n=41 caveat; verify
-  as more knockouts play). Top productionisation candidate after the national fine-tune.
+**UPDATE 2026-07-01 — re-run on the current 79 played games (72 group + 7 R32 ×2), the 41-game result
+LARGELY REVERSED** (`experiments/combined_model.py`, multiplier-weighted; LOO-calibrated mix of GoalNet +
+FIFA-prior + value-prior):
+
+| model | rps | pts | wtd-pts | exact |
+|---|---|---|---|---|
+| **GoalNet only (FM)** | 0.1641 | **75** | **82** | **12** |
+| GoalNet + FIFA | 0.1574 | 72 | 78 | 11 |
+| GoalNet + value | 0.1615 | 70 | 76 | 10 |
+| GoalNet + FIFA + value (mix) | **0.1569** | 72 | 78 | 11 |
+| (in-sample best mix, ceiling) | 0.1546 | 73 | 80 | 11 |
+
+With 79 games (vs the earlier 41-game snapshot where a FIFA prior "beat" GoalNet 39-35 pts), **GoalNet caught
+up and now scores the MOST points (75 / 82-weighted) and exacts (12)**. Mixing in FIFA+value **improves RPS
+(0.1641→0.1569 = better-calibrated probabilities) but NOT points** — every blend scores fewer points/exacts on
+the realised games. Value adds ~nothing on top of FIFA (0.1574→0.1569). Even the overfit in-sample best mix
+(weights g/f/v = 0.25/0.5/0.25) doesn't beat GoalNet on points.
+
+**REVISED verdict:** the 41-game "adopt a FIFA prior" call was small-sample noise. On the full slate GoalNet's
+*picks* are best; FIFA/value only help *probability calibration* (RPS), which matters for a market model, not
+for the fantasy point-picks. **Do NOT blend for the picks.** Club-lane squad_value gain (Study 1, rps
+0.2145→0.2133) stands but is conditional on 42% value coverage (missing-flag imputed elsewhere) and doesn't
+reach national teams. Net: market value is the one *feature* that beat baseline in-model on clubs; but for WC
+point-scoring, plain GoalNet remains the best predictor.
 
 ## FM26 grade coverage (WC2026 squads)
 1,248 players across 48 squads (source: worldcup project). After the overnight nationality + by-club scrape:
