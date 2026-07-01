@@ -392,7 +392,19 @@ is marginal (rps 0.2145→0.2140, pg +0.0004). The pre-test was optimistic; high
 **Verdict:** per-player/club market value is a genuine, modest national-lane feature (+0.030 pg) — the strongest
 *new* feature for nationals, but small on the broad set. It's a candidate to add to the production context
 (the WC national XIs' club values are available at predict time), but the gain is modest enough that it's an
-optional retrain, not a must. FIFA remains untested (sofifa-blocked); pursue via a Kaggle FC dataset if wanted.
+optional retrain, not a must.
+
+**FIFA UNBLOCKED then tested (2026-07-01, `experiments/fifa_ablation.py`).** sofifa's 403 was bypassed by
+downloading the GitHub `ismailoksuz/EAFC26-DataHub` FC26 dataset (18k players: name/dob/club/overall — no
+scraping, no auth). BUT matching FC26 → our players caps at 43% per-player = **12% both-XI coverage**: our
+`player` table has DOB for only ~1,857/60k so we match on name only (ambiguous, collision-biased toward the
+highest-rated same-name player), and club names don't align cross-source (name+club = 7%). At that coverage the
++FIFA feature **HURTS**: ALL pg 0.7108→0.7026, NATL pg 0.7980→0.7685, fewer exacts on both. FIFA is redundant
+with FM and the noisy match degrades the model. **Verdict: FIFA not adopted.** The true blocker isn't sofifa
+(data is obtainable) — it's that external per-player datasets can't be cleanly joined to our DOB-less players.
+The lever that would unlock FIFA *and* per-player TM value is a proper crosswalk: scrape our players' DOBs (the
+existing club-squad DOB-enrichment path) then match on name+dob. Not worth it for FIFA (redundant); marginal
+for TM value.
 
 ## FM26 grade coverage (WC2026 squads)
 1,248 players across 48 squads (source: worldcup project). After the overnight nationality + by-club scrape:
