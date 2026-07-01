@@ -406,6 +406,38 @@ The lever that would unlock FIFA *and* per-player TM value is a proper crosswalk
 existing club-squad DOB-enrichment path) then match on name+dob. Not worth it for FIFA (redundant); marginal
 for TM value.
 
+## Bake club value into the national-finetuned model — A/B (2026-07-01, `experiments/valnatl_ab.py`)
+
+Tests whether club market value adds ON TOP of the national fine-tune (the production national recipe): run
+train-split all-data W=15 → national fine-tune, base vs base+value, held-out test.
+
+| config | ALL pg | NATL rps | NATL pg | NATL exact |
+|---|---|---|---|---|
+| national fine-tune (base) | 0.6991 | 0.1712 | 0.8424 | 25 |
+| **fine-tune + club value** | 0.6914 | 0.1711 | **0.8719** | **28** |
+
+**+value stacks on the fine-tune: +0.030 national pg, +3 exacts.** National pg ladder: all-round 0.798 →
+fine-tune 0.842 → **fine-tune+value 0.872**. The value signal doesn't overlap the fine-tune — it genuinely adds
+on the WC lane. Club/ALL drops (the model is already national-specialised). **Verdict: worth baking into the
+production national goalnet.** (Requires the value context feature at predict time — the WC XIs' club values,
+available in club_season_tm.)
+
+**BAKED into production + A/B on realized WC games** (`experiments/compare_models.py`, value-aware). Wired via
+`src/build_value_feat.py` (shared train/predict), `train_goals.py --value`, `predict_game.py` (nvmap +
+xi_value_feat), retrained the 5-seed ensemble + national fine-tune with value → `goalnet.pt` (nctx=15,
+`value=True`); pre-value model backed up at `goalnet_prevalue.pt`. On the 79 played WC games:
+
+| model | chalk pts | exact | contrarian pts |
+|---|---|---|---|
+| goalnet_prevalue (no value) | **75** | 12 | 61 |
+| goalnet.pt (value) | 73 | 12 | 58 |
+
+**MIXED:** held-out national test said +0.030 pg (value helps); the realized 79 WC games say wash-to-slightly-
+worse (chalk 73 vs 75, exacts tied at 12). Small samples disagree. Net: baking value is at best marginal on the
+actual target and adds a predict-time dependency (club_season_tm coverage). **Decision pending: keep value-baked
+`goalnet.pt` (trust the held-out national test) or revert to `goalnet_prevalue.pt` (WC games don't confirm it,
+simpler). Recommend revert unless the held-out signal is trusted over the noisier realized slate.**
+
 ## FM26 grade coverage (WC2026 squads)
 1,248 players across 48 squads (source: worldcup project). After the overnight nationality + by-club scrape:
 FM26-graded **1,047/1,248 (84%)**; **effective 90%** with edition-fallback (most-recent edition when FM26

@@ -29,6 +29,8 @@ def wc_grids(ckpt):
     for st in states:
         nt = tg.GoalNet(A, nctx); nt.load_state_dict(st); nt.eval(); nets.append(nt)
     con = db.connect(); natctx = tg.national_context(con)
+    import build_value_feat as bvf
+    VALUE = c.get("value", False); nvmap = bvf.name_value_map(con) if VALUE else {}
     name2cid = {r[1]: r[0] for r in con.execute("SELECT club_id,name FROM club")}
     teams = {}
     for f in (WC / "teams").glob("*.json"):
@@ -68,6 +70,10 @@ def wc_grids(ckpt):
         ca0, cb0 = key.split("-"); hc = detect(gg.get("home_xi", []), ca0, cb0); ac = cb0 if hc == ca0 else ca0
         Xh, Rh = side(gg.get("home_xi", [])); Xa, Ra = side(gg.get("away_xi", []))
         ctx = tg.ctx_vec(natctx.get(teams.get(hc), (tg.BASE, 1, 0)), natctx.get(teams.get(ac), (tg.BASE, 1, 0)))
+        if VALUE:
+            hn = [db.norm(p.get("full", "")) for p in gg.get("home_xi", [])]
+            an = [db.norm(p.get("full", "")) for p in gg.get("away_xi", [])]
+            ctx = np.concatenate([ctx, bvf.xi_value_feat(hn, an, nvmap)])
         Xh = ((Xh - mu) / sd).astype(np.float32); Xa = ((Xa - mu) / sd).astype(np.float32); ctxn = ((ctx - cmu) / csd).astype(np.float32)
         grids = []
         with torch.no_grad():

@@ -147,6 +147,13 @@ def main():
     cz = np.load(ROOT / "data" / "context.npz"); cctx, cmids = cz["ctx"], cz["mids"]
     cmap = {int(m): cctx[i] for i, m in enumerate(cmids)}; nctx = cctx.shape[1]
     CTX = np.stack([cmap.get(m, np.zeros(nctx, np.float32)) for m in mids]).astype(np.float32)
+    VALON = "--value" in sys.argv   # bake club market value into the context (data/value.npz; +0.03 natl pg)
+    if VALON:
+        vz = np.load(ROOT / "data" / "value.npz"); _vv, _vm = vz["val"], vz["mids"]   # materialize (npz is lazy)
+        vmap = {int(m): _vv[i] for i, m in enumerate(_vm)}; _vd = _vv.shape[1]
+        VAL = np.stack([vmap.get(m, np.zeros(_vd, np.float32)) for m in mids]).astype(np.float32)
+        CTX = np.concatenate([CTX, VAL], 1); nctx = CTX.shape[1]
+        print(f"  --value ON: context {nctx} feats (base + club value)", flush=True)
 
     con = db.connect()
     meta = {r[0]: (r[1], r[2], r[3]) for r in con.execute("SELECT match_id,competition_id,home_goals,away_goals FROM match")}
@@ -313,11 +320,14 @@ def main():
         # "states" = all seeds; predict averages the per-match score grids across seeds when present.
         ckpt = {"state": states[0], "states": states, "A": A, "nctx": nctx, "rho": float(best_rho), "beta": BETA,
                 "mu": mu, "sd": sd, "cmu": cmu, "csd": csd, "attrs": ATTRS,
-                "role_mean": {r: role_mean[r] for r in range(4)}, "W": W, "natl_ft": FT}
+                "role_mean": {r: role_mean[r] for r in range(4)}, "W": W, "natl_ft": FT, "value": VALON}
         torch.save(ckpt, ROOT / "data" / "goalnet.pt")
         print(f"  saved data/goalnet.pt ({nseed} seed{'s' if nseed > 1 else ''})", flush=True)
 
     # ---- score the played WC2026 games ----
+    if VALON:   # this in-script scoring builds a 10-feat ctx; skip for value models (predict_game does it right)
+        print("  (--value: skipping in-script WC scoring; use predict_game.py for value-aware inference)", flush=True)
+        con.close(); return
     natctx = national_context(con)
     name2cid = {r[1]: r[0] for r in con.execute("SELECT club_id,name FROM club")}
     teams = {}

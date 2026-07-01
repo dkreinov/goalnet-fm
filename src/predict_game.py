@@ -20,6 +20,7 @@ ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT / "src"))
 import db
 import train_goals as tg
+import build_value_feat as bvf
 
 WC = Path(r"D:\Programming\claude\worldcup\team_db")
 FMV = 3
@@ -160,6 +161,10 @@ def main():
         nt = tg.GoalNet(A, nctx); nt.load_state_dict(st); nt.eval(); nets.append(nt)
 
     con = db.connect()
+    VALUE = c.get("value", False)                          # value-baked model? build the name->club-value map
+    nvmap = bvf.name_value_map(con) if VALUE else {}
+    if VALUE:
+        print(f"(value-baked model: club-value context on, {len(nvmap)} players mapped)")
     name2cid = {r[1]: r[0] for r in con.execute("SELECT club_id,name FROM club")}
     teams = {}
     for f in (WC / "teams").glob("*.json"):
@@ -264,6 +269,10 @@ def main():
             print(f"  (note: {key} home/away XI were swapped in source data — corrected)")
         Xh, Rh, i1 = side(gg.get("home_xi", [])); Xa, Ra, i2 = side(gg.get("away_xi", []))
         ctx = tg.ctx_vec(natctx.get(teams.get(hc), (tg.BASE, 1, 0)), natctx.get(teams.get(ac), (tg.BASE, 1, 0)))
+        if VALUE:   # value-baked model: append the XI-mean club-value feature (home_xi<->hc, label-swap safe)
+            hn = [db.norm(p.get("full", "")) for p in gg.get("home_xi", [])]
+            an = [db.norm(p.get("full", "")) for p in gg.get("away_xi", [])]
+            ctx = np.concatenate([ctx, bvf.xi_value_feat(hn, an, nvmap)])
         Xh = ((Xh - mu) / sd).astype(np.float32); Xa = ((Xa - mu) / sd).astype(np.float32)
         ctxn = ((ctx - cmu) / csd).astype(np.float32)
         grids = []
