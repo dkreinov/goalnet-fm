@@ -366,6 +366,34 @@ to the ~583 missing clubs (a ~1000s-of-club-season scrape, NOT 60k players) → 
 if that keeps paying, collect true per-player transfermarkt values + FIFA (the full 60k scrape) for precision.
 Caveats: NATL n=203 (noisy); 23%-coverage feature lifting the whole subset is surprising (verify at higher cov).
 
+## Full value pipeline + higher-coverage confirmation (2026-07-01)
+
+Executed the value+FIFA data pipeline (plan-20260701-1047). **FIFA half blocked**: sofifa returns 403
+(Cloudflare) to bots — preflight (`src/preflight_scrape.py`) caught it before any long scrape; TM was fine.
+So the run went value-only (FIFA would need a Kaggle FC-dataset download instead of scraping).
+
+**Scrape** (`src/scrape_tm_values.py`, throttled 2.5s + disk-cached): filled `club_season_tm` **4035→5087
+(+1,052 club-season squad values)** over 2,491 (club,season) pairs (~43% resolvable). Per-player TM value
+(`player_tm_value`, 395 rows) stayed thin — matching needs DOB and our `player` table has DOB for only ~1,857
+of 60k players. So the usable signal is the club-value proxy (player's club value), same as the pre-test.
+
+**Confirmation ablation** (`playerval_ablation.py`, coverage 42%→65% ALL, **23%→58% NATIONAL**):
+
+| config | ALL rps | ALL pg | NATL pg | NATL exact |
+|---|---|---|---|---|
+| base ctx(10) | 0.2145 | 0.7108 | 0.7980 | 21 |
+| +value @ 23% cov (pre-test) | 0.2133 | 0.7130 | 0.8522 | 25 |
+| **+value @ 58% cov (confirmed)** | 0.2140 | 0.7112 | **0.8276** | 23 |
+
+**Honest correction:** at representative (58%) coverage the national gain is **+0.030 pg (still the best
+national feature, still real) — but smaller than the noisy +0.054 the 23% snapshot showed.** Broad-set effect
+is marginal (rps 0.2145→0.2140, pg +0.0004). The pre-test was optimistic; higher coverage is the truth.
+
+**Verdict:** per-player/club market value is a genuine, modest national-lane feature (+0.030 pg) — the strongest
+*new* feature for nationals, but small on the broad set. It's a candidate to add to the production context
+(the WC national XIs' club values are available at predict time), but the gain is modest enough that it's an
+optional retrain, not a must. FIFA remains untested (sofifa-blocked); pursue via a Kaggle FC dataset if wanted.
+
 ## FM26 grade coverage (WC2026 squads)
 1,248 players across 48 squads (source: worldcup project). After the overnight nationality + by-club scrape:
 FM26-graded **1,047/1,248 (84%)**; **effective 90%** with edition-fallback (most-recent edition when FM26
