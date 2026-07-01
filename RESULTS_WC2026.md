@@ -434,9 +434,11 @@ xi_value_feat), retrained the 5-seed ensemble + national fine-tune with value â†
 
 **MIXED:** held-out national test said +0.030 pg (value helps); the realized 79 WC games say wash-to-slightly-
 worse (chalk 73 vs 75, exacts tied at 12). Small samples disagree. Net: baking value is at best marginal on the
-actual target and adds a predict-time dependency (club_season_tm coverage). **Decision pending: keep value-baked
-`goalnet.pt` (trust the held-out national test) or revert to `goalnet_prevalue.pt` (WC games don't confirm it,
-simpler). Recommend revert unless the held-out signal is trusted over the noisier realized slate.**
+actual target and adds a predict-time dependency (club_season_tm coverage). **DECISION: REVERTED** â€” `goalnet.pt`
+restored to `goalnet_prevalue.pt` (national fine-tune, nctx=10, no value). The +0.030 held-out national gain
+didn't survive on the realized WC games (wash-to-worse), so production stays on the simpler national model. The
+value bake remains available as an option: `python src/train_goals.py --ensemble 5 --full --natl-finetune
+--value` rebuilds it, and `predict_game.py` auto-detects the `value` flag.
 
 ## FM26 grade coverage (WC2026 squads)
 1,248 players across 48 squads (source: worldcup project). After the overnight nationality + by-club scrape:
