@@ -341,6 +341,31 @@ for the fantasy point-picks. **Do NOT blend for the picks.** Club-lane squad_val
 reach national teams. Net: market value is the one *feature* that beat baseline in-model on clubs; but for WC
 point-scoring, plain GoalNet remains the best predictor.
 
+## Per-player value pre-test (2026-07-01) — GATE PASSED, strongest national gain yet
+
+Before committing to a multi-day scrape of true per-player FIFA+market values for the whole 60k-player dataset,
+a FREE decisive pre-test (`experiments/playerval_ablation.py`): proxy per-player market value with each
+starter's CLUB squad value (club matches = match_player.club_id; NATIONAL = the player's real club via
+player_snapshot.club_id, since match_player.club_id is the national team). Per-match features = [mean home-XI
+club value, mean away-XI club value, diff, home cov, away cov], added as context, retrain, held-out test.
+
+| config | ALL rps | ALL pg | NATL rps | NATL pg | NATL exact |
+|---|---|---|---|---|---|
+| base ctx(10) | 0.2145 | 0.7108 | 0.1701 | 0.7980 | 21 |
+| **+player_value(15)** | **0.2133** | **0.7130** | 0.1734 | **0.8522** | **25** |
+
+Coverage: ALL both-sides 42%, NATIONAL 23%. **+player_value helps the broad set (rps 0.2145→0.2133, pg +0.002,
+acc +0.4pp) AND gives the LARGEST national pg lift of the whole project (+0.054, +4 exacts) — at only 23%
+national coverage.** Reconciles the earlier combined-model finding: value as a prediction-time BLEND didn't beat
+GoalNet's picks, but value as a TRAINED in-model feature does extract signal (a national XI of players from
+top-value clubs is strong — a signal FM grades + team context miss). **GATE PASSED, especially for the WC lane.**
+
+**Recommendation — the scrape is justified, but stage it cheaply first:** the 23% national coverage is the
+ceiling on this result; raising it should amplify the gain. Cheapest high-value step = expand `club_season_tm`
+to the ~583 missing clubs (a ~1000s-of-club-season scrape, NOT 60k players) → re-run at higher coverage. Only
+if that keeps paying, collect true per-player transfermarkt values + FIFA (the full 60k scrape) for precision.
+Caveats: NATL n=203 (noisy); 23%-coverage feature lifting the whole subset is surprising (verify at higher cov).
+
 ## FM26 grade coverage (WC2026 squads)
 1,248 players across 48 squads (source: worldcup project). After the overnight nationality + by-club scrape:
 FM26-graded **1,047/1,248 (84%)**; **effective 90%** with edition-fallback (most-recent edition when FM26
