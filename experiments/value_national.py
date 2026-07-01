@@ -31,12 +31,13 @@ def prior_grid(sup, c, b=math.log(1.30)):
     return tg.score_matrix(math.exp(b + c * sup), math.exp(b - c * sup), 0.0)
 
 
-def score_set(grids, hs, as_):
+def score_set(grids, hs, as_, wts=None):
     P3 = np.array([tg.hda_from_P(g) for g in grids]); y = np.array([0 if h > a else (1 if h == a else 2) for h, a in zip(hs, as_)])
-    r = tg.rps(y, P3); tot = ex = 0
-    for g, h, a in zip(grids, hs, as_):
-        pk = ev_pick(g); pts, lab = tg.grade(pk, int(h), int(a)); tot += pts; ex += lab == "exact"
-    return r, tot, ex
+    r = tg.rps(y, P3); tot = wtot = ex = 0.0
+    for i, (g, h, a) in enumerate(zip(grids, hs, as_)):
+        pk = ev_pick(g); pts, lab = tg.grade(pk, int(h), int(a)); m = (wts[i] if wts is not None else 1)
+        tot += pts; wtot += pts * m; ex += lab == "exact"
+    return r, int(tot), int(ex), wtot
 
 
 def main():
@@ -45,9 +46,19 @@ def main():
     gn = [H.ens_grid(w["lh"][i], w["la"][i], 0.0) for i in range(len(keys))]   # GoalNet grids
     strength = {r["code"]: r for r in csv.DictReader(open(Path(__file__).resolve().parent.parent / "data" / "wc_team_strength.csv", encoding="utf-8"))}
     n = len(keys)
-    base = score_set(gn, hs, as_)
-    print(f"=== Study 2: strength-prior blends on {n} played WC games (leave-one-out calibrated) ===", flush=True)
-    print(f"  {'GoalNet (FM) baseline':28s} rps={base[0]:.4f} pts={base[1]} exact={base[2]}", flush=True)
+    # round multipliers per game (group1 r32x2 r16x4 qf8 sf16 final32), matched by unordered team pair via API
+    MULT = {"group": 1, "r32": 2, "r16": 4, "qf": 8, "sf": 16, "final": 32}
+    try:
+        sys.path.insert(0, str(Path(__file__).resolve().parent.parent)); import auto_bet as ab
+        bearer, _ = ab.get_access()
+        rnd = {frozenset({f["home_team"], f["away_team"]}): f["round"]
+               for f in ab.api(ab.BASE + "/rest/v1/fixtures?select=home_team,away_team,round", bearer=bearer)}
+        wts = np.array([MULT.get(rnd.get(frozenset(k.split("-")), "group"), 1) for k in keys])
+    except Exception as e:
+        print(f"  (round lookup failed: {e}; using flat weights)", flush=True); wts = np.ones(n)
+    base = score_set(gn, hs, as_, wts)
+    print(f"=== Study 2: strength-prior blends on {n} played WC games (LOO-calibrated; wtd=multiplier-weighted) ===", flush=True)
+    print(f"  {'GoalNet (FM) baseline':28s} rps={base[0]:.4f} pts={base[1]} wtd={base[3]:.0f} exact={base[2]}", flush=True)
 
     def supremacy(col, higher, tform):
         raw = {}
@@ -75,8 +86,8 @@ def main():
             pg_i = prior_grid(sup[i], bestc); prior_grids.append(pg_i)
             bestw = min(WS, key=lambda ww: score_set([(1-ww)*gn[j] + ww*prior_grid(sup[j], bestc) for j in idx], hs[idx], as_[idx])[0])
             bg = (1 - bestw) * gn[i] + bestw * pg_i; blend_grids.append(bg / bg.sum())
-        pr = score_set(prior_grids, hs, as_); bl = score_set(blend_grids, hs, as_)
-        print(f"  {col:16s} prior-only rps={pr[0]:.4f} pts={pr[1]} ex={pr[2]}  |  GoalNet+{col[:8]} rps={bl[0]:.4f} pts={bl[1]} ex={bl[2]}", flush=True)
+        pr = score_set(prior_grids, hs, as_, wts); bl = score_set(blend_grids, hs, as_, wts)
+        print(f"  {col:16s} prior rps={pr[0]:.4f} pts={pr[1]} wtd={pr[3]:.0f} ex={pr[2]}  |  +GoalNet rps={bl[0]:.4f} pts={bl[1]} wtd={bl[3]:.0f} ex={bl[2]}", flush=True)
 
 
 if __name__ == "__main__":
