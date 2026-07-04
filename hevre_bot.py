@@ -89,16 +89,23 @@ def health_signal(ok, reason=""):
     except Exception: pass
 
 # ---- API ----
+_SESS = ""    # PHPSESSID cookie — requestNewActive (and the API generally) needs it alongside the Bearer
+
 def api(t, bearer, body=None):
     h = {"Authorization": "Bearer " + bearer, "User-Agent": UA, "Content-Type": "application/json"}
+    if _SESS: h["Cookie"] = "PHPSESSID=" + _SESS
     r = urllib.request.Request(BASE + t, data=json.dumps(body if body is not None else {}).encode(), headers=h, method="POST")
     return json.loads(urllib.request.urlopen(r, timeout=40).read().decode("utf-8", "replace") or "null")
 
 def refresh(a):
-    """Trade the month-long refreshToken for a fresh loginToken (server.js requestNewActive flow)."""
-    out = api("requestNewActive", a["refreshToken"], {"refreshToken": a["refreshToken"], "email": ""})
+    """Trade the refreshToken for a fresh loginToken (requestNewActive). NEEDS the PHPSESSID cookie AND the
+    real account email — without both the endpoint returns the app HTML shell (silent auth failure)."""
+    global _SESS
+    _SESS = a.get("phpsessid", "") or _SESS
+    email = (a.get("loginData") or {}).get("email") or a.get("email") or ""
+    out = api("requestNewActive", a["refreshToken"], {"refreshToken": a["refreshToken"], "email": email})
     tok = (out or {}).get("token") or (out or {}).get("loginToken")
-    if not tok: raise RuntimeError(f"refresh failed: {str(out)[:120]}")
+    if not tok: raise RuntimeError(f"refresh failed (session/email/cookie stale?): {str(out)[:120]}")
     a["loginToken"] = tok
     if (out or {}).get("refreshToken"): a["refreshToken"] = out["refreshToken"]
     json.dump(a, open(AUTH, "w")); return a
@@ -126,9 +133,11 @@ def round_deadline(rd):
     return min(kos) if kos else None
 
 def main(dry=False):
+    global _SESS
     try: a = json.load(open(AUTH))
     except Exception as e:
         log(f"NO AUTH FILE: {e}"); health_signal(False, "no hevre_auth.json"); return
+    _SESS = a.get("phpsessid", "")     # send the session cookie on every API call, not just refresh
     try:
         user, a = get_user(a)
     except Exception as e:
