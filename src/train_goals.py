@@ -154,6 +154,13 @@ def main():
         VAL = np.stack([vmap.get(m, np.zeros(_vd, np.float32)) for m in mids]).astype(np.float32)
         CTX = np.concatenate([CTX, VAL], 1); nctx = CTX.shape[1]
         print(f"  --value ON: context {nctx} feats (base + club value)", flush=True)
+    VENON = "--venue" in sys.argv   # venue-aware home advantage: [true_home, neutral, venue_known] (data/venue.npz)
+    if VENON:
+        nz = np.load(ROOT / "data" / "venue.npz"); _nf, _nm = nz["feats"], nz["mids"]   # materialize (npz is lazy)
+        nmap = {int(m): _nf[i] for i, m in enumerate(_nm)}; _nd = _nf.shape[1]
+        VEN = np.stack([nmap.get(m, np.zeros(_nd, np.float32)) for m in mids]).astype(np.float32)
+        CTX = np.concatenate([CTX, VEN], 1); nctx = CTX.shape[1]
+        print(f"  --venue ON: context {nctx} feats (+ true_home/neutral/known)", flush=True)
 
     con = db.connect()
     meta = {r[0]: (r[1], r[2], r[3]) for r in con.execute("SELECT match_id,competition_id,home_goals,away_goals FROM match")}
@@ -320,13 +327,13 @@ def main():
         # "states" = all seeds; predict averages the per-match score grids across seeds when present.
         ckpt = {"state": states[0], "states": states, "A": A, "nctx": nctx, "rho": float(best_rho), "beta": BETA,
                 "mu": mu, "sd": sd, "cmu": cmu, "csd": csd, "attrs": ATTRS,
-                "role_mean": {r: role_mean[r] for r in range(4)}, "W": W, "natl_ft": FT, "value": VALON}
+                "role_mean": {r: role_mean[r] for r in range(4)}, "W": W, "natl_ft": FT, "value": VALON, "venue": VENON}
         torch.save(ckpt, ROOT / "data" / "goalnet.pt")
         print(f"  saved data/goalnet.pt ({nseed} seed{'s' if nseed > 1 else ''})", flush=True)
 
     # ---- score the played WC2026 games ----
-    if VALON:   # this in-script scoring builds a 10-feat ctx; skip for value models (predict_game does it right)
-        print("  (--value: skipping in-script WC scoring; use predict_game.py for value-aware inference)", flush=True)
+    if VALON or VENON:   # in-script scoring builds a 10-feat ctx; skip for value/venue models (predict_game does it right)
+        print("  (--value/--venue: skipping in-script WC scoring; use predict_game.py for that model)", flush=True)
         con.close(); return
     natctx = national_context(con)
     name2cid = {r[1]: r[0] for r in con.execute("SELECT club_id,name FROM club")}

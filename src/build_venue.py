@@ -12,6 +12,13 @@ sys.path.insert(0, str(Path(__file__).parent))
 import db
 ROOT = Path(__file__).resolve().parent.parent
 NATc = {9, 10, 11, 12, 13, 14, 15}
+HOSTS = {"USA", "CAN", "MEX"}   # WC2026 co-hosts: their games are true-home (own country), all else neutral
+
+
+def wc_venue_feat(home_code):
+    """[true_home, neutral, venue_known] for a WC game — the home team is a host (in its country) or neutral."""
+    th = 1.0 if home_code in HOSTS else 0.0
+    return np.array([th, 1.0 - th, 1.0], np.float32)
 
 
 def main():

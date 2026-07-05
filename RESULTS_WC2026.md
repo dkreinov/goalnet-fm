@@ -461,3 +461,25 @@ A/B on the 90 played games says DON'T FIX IT: current 87 pts / 13 exact / rps 0.
 0.1571 vs host-corrected 77/10/0.1535. The fixture-home label tracks bracket seeding at this WC, so the boost
 functions as an accidental seeding prior worth ~+10 pts. Post-hoc λ-scaling approximation, n=90. KEPT AS-IS.
 Also confirmed: live-form context current (90 games folded); player vectors static FM26 (team-level form only).
+
+## Per-team / venue-aware home-advantage A/B (2026-07-05) — REJECTED (held-out win, WC-slate loss)
+User hypothesis: teams have team/stadium-specific home advantage (MEX at Azteca etc.), not one global fixture-
+home boost. Built venue.npz ([true_home, neutral, venue_known] from 98%-covered match.venue; per-team home_adv
+= per-stadium since clubs' modal venue holds 98% of home games). Three variants, held-out test 2025-26:
+
+| variant | ALL rps | ALL pg | NATL rps | NATL pg | NATL ex |
+|---|---|---|---|---|---|
+| base (production) | 0.2145 | 0.7108 | 0.1701 | 0.7980 | 21 |
+| **+flag** (true_home/neutral in ctx) | 0.2160 | 0.6999 | **0.1672** | **0.8276** | **25** |
+| +perteam (home_adv embedding, gated) | 0.2139 | 0.7090 | 0.1693 | 0.8030 | 20 |
+
+- **+flag WINS the national lane held-out** (+0.030 pg, +4 exacts, better rps) — venue signal is real; nationals
+  are 43% true-home / 48% neutral so the flag disambiguates what the fixture-home label can't.
+- +perteam ranking is SANE (Feyenoord/De Kuip, Lech Poznan 1.98x, Swiss altitude Thun/Yverdon top; away-weak
+  minnows bottom) — mechanism learned real fortresses, but nationals have too few home games for the embedding.
+- **WC-slate gate KILLS it** (90 played games, venue model single-seed full+ft vs production 5-seed):
+  production chalk **87** (ex13) vs venue chalk **80** (ex11). The fixture-home boost's accidental SEEDING-PRIOR
+  value on the realized bracket (~+10 pts, per 2026-07-05 audit) exceeds the venue-correctness gain — same
+  failure mode as club-value and FIFA (held-out gain, WC-slate reversal). NOT ADOPTED; production unchanged.
+- Kept for reuse: `src/build_venue.py`, `train_goals.py --venue`, `experiments/homeadv_ablation.py`,
+  compare_models venue-awareness. Retest if a real neutral-venue national test set (not WC-bracket) appears.

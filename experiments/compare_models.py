@@ -74,6 +74,9 @@ def wc_grids(ckpt):
             hn = [db.norm(p.get("full", "")) for p in gg.get("home_xi", [])]
             an = [db.norm(p.get("full", "")) for p in gg.get("away_xi", [])]
             ctx = np.concatenate([ctx, bvf.xi_value_feat(hn, an, nvmap)])
+        if c.get("venue"):
+            import build_venue as bv
+            ctx = np.concatenate([ctx, bv.wc_venue_feat(hc)])   # [true_home,neutral,known]: host home=true, else neutral
         Xh = ((Xh - mu) / sd).astype(np.float32); Xa = ((Xa - mu) / sd).astype(np.float32); ctxn = ((ctx - cmu) / csd).astype(np.float32)
         grids = []
         with torch.no_grad():
