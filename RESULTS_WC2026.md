@@ -452,3 +452,12 @@ Root cause: session `database_version` reverts 7→5 under `update_filter` rate 
 Fix (`src/scrape_wc2026_clubs.py`): squad pages are URL-driven (`/clubs/7-fm-26/{id}`, no filter) → filter-free
 + cached; `update_filter` used once/nation for club-ID discovery with db7-verification + cooldown-retry +
 resumable JSON cache.
+
+## Home-advantage audit (2026-07-05, user question)
+GoalNet applies a learned fixture-home boost (home_adv ≈ +31% goals, exp(0.269), learned on club data) to
+whichever team is LISTED home — at a mostly-neutral-venue WC this is conceptually mis-specified, and the true
+hosts (MEX/USA/CAN) are often listed AWAY (KOR-MEX, AUS-USA, ...) so their opponents got the boost. BUT the
+A/B on the 90 played games says DON'T FIX IT: current 87 pts / 13 exact / rps 0.1532 vs neutralized 76/10/
+0.1571 vs host-corrected 77/10/0.1535. The fixture-home label tracks bracket seeding at this WC, so the boost
+functions as an accidental seeding prior worth ~+10 pts. Post-hoc λ-scaling approximation, n=90. KEPT AS-IS.
+Also confirmed: live-form context current (90 games folded); player vectors static FM26 (team-level form only).
