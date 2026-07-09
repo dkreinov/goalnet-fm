@@ -58,6 +58,16 @@ def _ping(url, body=None, headers=None):
         urllib.request.urlopen(req, timeout=15)
     except Exception: pass
 
+def notify_bigpick(rnd, verdict, spain_in, H, hs, as_, A):
+    """Approval-window push on SF/Final: tell the user what the bot set + why, so they can override in the
+    app before kickoff. High-multiplier, possibly-contrarian pick -> worth a human glance."""
+    try: cfg = json.load(open(NOTIFY))
+    except Exception: return
+    strat = "gamble(Spain out)" if not spain_in else ("exacts(protect)" if verdict in ("PROTECT", "NARROW") else "contrarian(chase)")
+    body = f"{H} {hs}-{as_} {A}  [{rnd.upper()}, {strat}] — override in the app before KO if you disagree"
+    if cfg.get("win_toast", True): _toast(f"WC {rnd.upper()} pick set", body)
+    if cfg.get("ntfy_url"): _ping(cfg["ntfy_url"], body, {"Title": f"WC {rnd.upper()} pick (approve/override)", "Priority": "high", "Tags": "soccer"})
+
 def health_signal(ok, reason=""):
     """Track ok/fail transitions and PUSH on: first failure, recovery, and every 2h while still down.
     Always pings Healthchecks (so the bot dying entirely — PC asleep, task disabled — also trips its
@@ -333,6 +343,8 @@ def main(dry=False):
             chk = api(BASE + f"/rest/v1/picks?select=home_score,away_score&fixture_id=eq.{f['id']}&user_id=eq.{uid}", bearer=bearer)
             if chk and chk[0]["home_score"] == home_score and chk[0]["away_score"] == away_score:
                 state[fid] = tag; acted += 1; log("WROTE+verified " + msg)
+                if rnd in ("sf", "final"):                          # approval window on the two decisive games
+                    notify_bigpick(rnd, verdict, spain_in, H, home_score, away_score, A)
             else:
                 log(f"WRITE UNVERIFIED fid={fid}: got {chk}")
         except Exception as e:
