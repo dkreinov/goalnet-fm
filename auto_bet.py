@@ -137,13 +137,23 @@ def team_prev_xi(code, lu, results, rosters):
 
 ROUNDS = {"group", "r32", "r16", "qf", "sf", "final"}
 
-def predict(key, lineups_path=None, round_=None):
-    # Apply the PREDICTION_GUIDE pick strategy via --round (group/R32/R16 -> safe draw-aware exacts;
-    # QF+ -> gamble). A known round maps the whole strategy; anything else falls back to --strategy exacts
-    # (safe default) so we never emit an unmapped --round. The generic "<strategy> pick:" regex below
-    # matches whatever label predict_game prints (exacts/gamble/chalk/...).
+def win_flag(round_, verdict, spain_in):
+    """Standing-aware predict_game argv (the win-optimization core):
+      * Spain OUT (your +50 gone)      -> gamble everywhere (max aggression).
+      * PROTECT / NARROW (ahead)       -> exacts everywhere (protect the lead, keep the outcome edge).
+      * CHASE (behind)                 -> gamble at QF/R16 (via --round) but ESCALATE to contrarian on
+                                          SF/Final — the two decisive games where separation matters most.
+    Anything unmapped falls back to safe exacts."""
+    if not spain_in: return ["--strategy", "gamble"]
+    if verdict in ("PROTECT", "NARROW"): return ["--strategy", "exacts"]
+    if round_ in ("sf", "final"): return ["--strategy", "contrarian", "--beta", "0.35"]   # CHASE escalation
+    return ["--round", round_] if round_ in ROUNDS else ["--strategy", "exacts"]
+
+def predict(key, lineups_path=None, flag=None):
+    # flag = win_flag(...) argv (strategy/round). Fallback to safe exacts if unset. The generic
+    # "<strategy> pick:" regex below matches whatever label predict_game prints (exacts/gamble/contrarian/...).
     cmd = [PY, os.path.join(FM, "src", "predict_game.py"), key]
-    cmd += (["--round", round_] if round_ in ROUNDS else ["--strategy", "exacts"])
+    cmd += (flag or ["--strategy", "exacts"])
     if lineups_path: cmd += ["--lineups", lineups_path]
     try:
         p = subprocess.run(cmd, capture_output=True, text=True, timeout=120, cwd=FM)
@@ -152,23 +162,24 @@ def predict(key, lineups_path=None, round_=None):
     m = re.search(r"\bpick:\s+([A-Z]{3})\s+(\d+)-(\d+)\s+([A-Z]{3})", (p.stdout or "") + (p.stderr or ""))
     return (m.group(1), int(m.group(2)), int(m.group(3)), m.group(4)) if m else None
 
-def model_pick(f, lu, results, rosters):
+def model_pick(f, lu, results, rosters, verdict="CHASE", spain_in=True):
     """(home_score, away_score, tag) for a fixture oriented to its home/away — confirmed XI if available,
-    else previous-game fallback. None if not predictable. Same logic as the main loop, factored for reuse."""
+    else previous-game fallback. None if not predictable. Same logic as the main loop, factored for reuse.
+    verdict/spain_in select the win-optimized strategy (default CHASE = play to catch up)."""
     H, A = f["home_team"], f["away_team"]
     realkey = None
     for cand in (f"{H}-{A}", f"{A}-{H}"):
         e = lu.get(cand)
         if e and len(e.get("home_xi") or []) >= 11 and len(e.get("away_xi") or []) >= 11 and e.get("state") == "notstarted":
             realkey = cand; break
-    rnd = f.get("round")
+    flag = win_flag(f.get("round"), verdict, spain_in)
     if realkey:
-        tag, pred = "confirmed", predict(realkey, round_=rnd)
+        tag, pred = "confirmed", predict(realkey, flag=flag)
     else:
         hx, ax = team_prev_xi(H, lu, results, rosters), team_prev_xi(A, lu, results, rosters)
         if not (hx and ax): return None
         json.dump({f"{H}-{A}": {"home_xi": hx, "away_xi": ax, "state": "notstarted"}}, open(TMPLU, "w"))
-        tag, pred = "fallback", predict(f"{H}-{A}", TMPLU, round_=rnd)
+        tag, pred = "fallback", predict(f"{H}-{A}", TMPLU, flag=flag)
     if not pred: return None
     mh, hs, ascore, ma = pred
     if mh == H and ma == A: return hs, ascore, tag
@@ -289,15 +300,16 @@ def main(dry=False):
             e = lu.get(cand)
             if e and len(e.get("home_xi") or []) >= 11 and len(e.get("away_xi") or []) >= 11 and e.get("state") == "notstarted":
                 realkey = cand; break
-        rnd = f.get("round")                                        # group/r32/.../final -> strategy via --round
+        rnd = f.get("round")
+        flag = win_flag(rnd, verdict, spain_in)                     # standing-aware strategy for this fixture
         if realkey:
-            tag, pred = "confirmed", predict(realkey, round_=rnd)
+            tag, pred = "confirmed", predict(realkey, flag=flag)
         else:                                                       # 2) fallback: previous-game XIs
             hx, ax = team_prev_xi(H, lu, results, rosters), team_prev_xi(A, lu, results, rosters)
             if not (hx and ax):
                 continue                                            # no prior game (e.g. matchday 1) -> wait
             json.dump({f"{H}-{A}": {"home_xi": hx, "away_xi": ax, "state": "notstarted"}}, open(TMPLU, "w"))
-            tag, pred = "fallback", predict(f"{H}-{A}", TMPLU, round_=rnd)
+            tag, pred = "fallback", predict(f"{H}-{A}", TMPLU, flag=flag)
         if not pred:
             log(f"{H}-{A} fid={fid}: no EV pick ({tag})"); continue
         mh, hs, ascore, ma = pred
