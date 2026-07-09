@@ -35,6 +35,15 @@ LOCK = 10     # stop writing this many minutes before KO. Lock-test (2026-06-23,
               # bot keeps re-checking and upgrades fallback->confirmed XI whenever a real lineup posts; the
               # 10-min margin is just clock-skew safety vs the actual kickoff lock.
 
+# --- standing-aware win-optimization (kept in sync with experiments/decide_risk.py + src/read_standings.py;
+#     inlined here to avoid a circular import — read_standings imports auto_bet) ---
+MULT = {"group": 1, "r32": 2, "r16": 4, "qf": 8, "sf": 16, "final": 32}   # exact = 3*MULT, correct = 1*MULT
+FUTURES = {  # each player's LOCKED winner pick (winner = +50); scorer ignored this phase
+    "RIVAL_3": "Netherlands", "RIVAL_4": "Argentina", "RIVAL_5": "France", "RIVAL_6": "Argentina",
+    "RIVAL_7": "Spain", "RIVAL_1": "Spain", "YOU": "Spain", "RIVAL_2": "Spain", "RIVAL_8": "Brazil"}
+P_WIN = {"Spain": 0.24, "France": 0.18, "Argentina": 0.15, "Brazil": 0.12, "Netherlands": 0.08}  # refresh w/ odds
+WIN_PTS = 50
+
 def log(m): open(LOG, "a", encoding="utf-8").write(f"{datetime.datetime.now():%Y-%m-%d %H:%M} | {m}\n")
 
 def _toast(title, msg):
@@ -166,6 +175,33 @@ def model_pick(f, lu, results, rosters):
     if mh == A and ma == H: return ascore, hs, tag
     return None
 
+def effective_verdict(fx, picks, profs, uid):
+    """Standing-aware verdict from the CURRENT effective table (per-game pts + E[your winner future]).
+    Pure — reuses the caller's already-fetched fixtures/picks/profiles; NO get_access (token-war-safe).
+    Returns (verdict in {PROTECT,NARROW,CHASE}, spain_in). See experiments/decide_risk.py for the rationale."""
+    fxd = {f["id"]: f for f in fx}
+    pg = {}                                                        # user_id -> [pts, exacts]
+    for p in picks:
+        f = fxd.get(p["fixture_id"])
+        if not f or f.get("status") != "finished" or f.get("home_score") is None: continue
+        m = MULT.get(f.get("round"), 1); ph, pa, rh, ra = p["home_score"], p["away_score"], f["home_score"], f["away_score"]
+        s = pg.setdefault(p["user_id"], [0, 0])
+        if ph == rh and pa == ra: s[0] += 3 * m; s[1] += 1
+        elif (ph > pa) == (rh > ra) and (ph < pa) == (rh < ra): s[0] += 1 * m
+    eff = []
+    for u, (pts, ex) in pg.items():
+        nick = profs.get(u, u[:8]); e = pts + P_WIN.get(FUTURES.get(nick), 0.0) * WIN_PTS
+        eff.append((nick, e, ex, u == uid))
+    if not any(x[3] for x in eff): return "CHASE", True             # can't find self -> assume behind
+    eff.sort(key=lambda x: (-x[1], -x[2]))
+    rank = next(i for i, x in enumerate(eff, 1) if x[3])
+    myeff = next(x[1] for x in eff if x[3])
+    if rank == 1 and (myeff - eff[1][1]) >= 5: verdict = "PROTECT"
+    elif rank == 1: verdict = "NARROW"
+    else: verdict = "CHASE"
+    spain_in = any("ESP" in (f.get("home_team"), f.get("away_team")) and f.get("status") != "finished" for f in fx)
+    return verdict, spain_in
+
 def lock_probe(fx, lu, results, rosters, bearer, uid, now):
     """One-shot: does the app accept an API write INSIDE the assumed 60-min lock? Perturb-then-restore so
     the verdict is unambiguous and the fixture is always left holding our real model pick. Config: wc_locktest.json."""
@@ -221,11 +257,20 @@ def main(dry=False):
         log(f"AUTH FAILED: {e}"); health_signal(False, f"auth: {e}"); print("auth failed:", e); return
     health_signal(True)                                     # auth works -> clear/recover the alert
     try:
-        fx = api(BASE + "/rest/v1/fixtures?select=id,round,kickoff_utc,home_team,away_team,status&order=kickoff_utc.asc", bearer=bearer)
+        fx = api(BASE + "/rest/v1/fixtures?select=id,round,kickoff_utc,home_team,away_team,status,home_score,away_score&order=kickoff_utc.asc", bearer=bearer)
         lu = json.load(open(os.path.join(WC, "lineups.json"), encoding="utf-8"))
         results = json.load(open(os.path.join(WC, "results.json"), encoding="utf-8"))
     except Exception as e:
         log(f"READ FAILED: {e}"); health_signal(False, f"read: {e}"); print("read failed:", e); return
+    # standing-aware verdict (reuse this run's bearer — no extra refresh)
+    try:
+        picks = api(BASE + "/rest/v1/picks?select=user_id,fixture_id,home_score,away_score", bearer=bearer)
+        profs = {p["id"]: p["nickname"] for p in api(BASE + "/rest/v1/profiles?select=id,nickname", bearer=bearer)}
+        verdict, spain_in = effective_verdict(fx, picks, profs, uid)
+    except Exception as e:
+        verdict, spain_in = "CHASE", True                          # safe default: play to catch up
+        log(f"verdict calc failed ({str(e)[:60]}) — defaulting CHASE")
+    log(f"verdict={verdict} spain_in={spain_in}")
     rosters = load_rosters()
     now = datetime.datetime.now(datetime.timezone.utc)
     acted = 0
