@@ -102,3 +102,14 @@ Plan: plans/goalnet-ablation-phase-1-harness-plan.md (SESSION_MODE=autonomous, P
 - Fix: run_ablation.py rebuilt the large TRAIN+earlystop tensors (~130MB each, via the bytearray copy that NumPy-2/torch compat forces in T()) on EVERY seed. Refactored to build them ONCE (make_split_tensors) and reuse across seeds — lower peak memory + faster. Verified with a 2-seed/2-epoch smoke: exit 0, seeds now diversify (0.2130 vs 0.2129); the earlier identical 0.2098 across seeds was rounding coincidence at that convergence point.
 - Relaunched canonical alone (b2xdvttws); seed 0 reproduced rps=0.2098 @e26. Canonical is slow (~18min/seed: 11,210-sample val loop each epoch); pooled will follow after it completes.
 - Timestamp: 2026-07-21
+
+## Step 5b: Verify baseline reproduces known results + WC-slate
+- Status: ✅ Complete
+- Summary: Both baseline rows registered — baseline-beta3-w15-canonical (59.8min) + baseline-beta3-w15 pooled (56.1min).
+- TRIPWIRE (harness == production): ran production src/train_goals.py (its default IS the canonical seed-7 recipe) on current data → TEST-all rps=0.2134 pg=0.706 exact=1125 (inside historical band 0.2130-0.2145 / 0.703-0.716). Then ran the HARNESS with seed 7: val rps=0.2109, TEST rps=0.2134 pg=0.706 exact=1125 — BIT-IDENTICAL to production. Harness training faithfully reproduces production; no bug.
+- Seed-variation note: harness seeds 0-4 clustered at TEST rps 0.2111-0.2121 (better than seed 7's 0.2134) — the historical band was seed-7 specifically; the 5-seed ensemble (canonical_test_all rps=0.2108, pg=0.718) is a legitimate grid-averaging improvement, so the registry canonical row reads slightly better than the single-seed band by design. rho choice (0.0 vs -0.05) affects rps negligibly (0.2111 vs 0.2112).
+- WC-slate cross-check: harness wc_slate (5-seed) pts/g=0.942 ×104 ≈ 98 pts vs production seed-7 in-script WC total 97 pts (exact=14 correct=55) — match.
+- Pooled reference highlights: eval_natl grid_info=+0.127 exact_lift=1.31; wc_slate grid_info=+0.146 exact_lift=1.17; eval_all grid_info=-0.032 (model does NOT beat the empirical prior on the broad all-competitions lane — edge concentrated on national/WC; a real prior-coasting signal for Step 6).
+- Infra fixes folded in (required to complete the runs): vectorized val_rps (hda_batch, verified identical to hda_from_P∘score_matrix to 4e-16); per-seed rate checkpointing (rates/<name>.s<k>.npz) so kills resume; --diagnose implemented (dormant until Step 6). Background jobs get idle-killed here → drove runs with continuous active monitoring; per-seed resume made it robust.
+- Files changed: experiments/ablation/registry.jsonl (2 rows), RESULTS_ABLATION.md (generated), run_ablation.py (val-speed + resume + diagnose), .gitignore (diagnostics/)
+- Timestamp: 2026-07-21

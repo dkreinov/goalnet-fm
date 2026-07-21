@@ -40,6 +40,7 @@ AB = ROOT / "experiments" / "ablation"
 REG = AB / "registry.jsonl"
 REPORT = AB / "RESULTS_ABLATION.md"
 RATES = AB / "rates"
+DIAG = AB / "diagnostics"
 BASELINE_NAME = "baseline-beta3-w15"          # pooled reference row for Δ columns
 RHOS = [-0.15, -0.1, -0.05, 0.0, 0.05]        # DC-rho grid (train_goals convention)
 
@@ -116,6 +117,20 @@ def load_data(npz, split, decay_halflife=None, ctx_extra=()):
     }
 
 
+def hda_batch(lh, la, M=tg.MAXG + 1):
+    """Vectorised H/D/A probabilities from Poisson rates — identical to
+    hda_from_P(score_matrix(lh, la, rho=0)) but over all matches at once (early-stop hot path)."""
+    k = np.arange(M)
+    lf = np.array([math.lgamma(i + 1) for i in range(M)])
+    ph = np.exp(k[None] * np.log(np.maximum(lh[:, None], 1e-6)) - lh[:, None] - lf[None])
+    pa = np.exp(k[None] * np.log(np.maximum(la[:, None], 1e-6)) - la[:, None] - lf[None])
+    ph /= ph.sum(1, keepdims=True); pa /= pa.sum(1, keepdims=True)   # joint outer is then normalised
+    D = (ph * pa).sum(1)                                             # P(h == a)
+    Pa_lt = np.concatenate([np.zeros((len(la), 1)), np.cumsum(pa, 1)[:, :-1]], 1)  # P(a < h)
+    H = (ph * Pa_lt).sum(1)                                          # P(h > a)
+    return np.stack([H, D, 1 - H - D], 1)
+
+
 def infer(net, Xhn, Rh, Xan, Ra, CTXn, bs=4096):
     """Batched forward -> (lambda_home, lambda_away) as numpy (exp of log-rates)."""
     lhs, las = [], []
@@ -133,6 +148,11 @@ def grids_from(lhla_list, rho):
         gs = np.stack([tg.score_matrix(a, b, rho) for a, b in zip(lh, la)])
         acc = gs if acc is None else acc + gs
     return acc / len(lhla_list)
+
+
+def grids_from_arrays(lh2d, la2d, rho):
+    """Seed-averaged grids from cached (seeds, n) rate arrays."""
+    return grids_from([(lh2d[s], la2d[s]) for s in range(lh2d.shape[0])], rho)
 
 
 def points_of(grids, hg, ag):
@@ -171,8 +191,7 @@ def train_one(seed, D, TR, ES, beta, epochs, patience=25):
         net.eval()
         with torch.no_grad():
             lh, la = net(Vh, Vrh, Va_, Vra, Cv)
-        lh, la = tonp(lh), tonp(la)
-        P = np.array([tg.hda_from_P(tg.score_matrix(math.exp(a), math.exp(b))) for a, b in zip(lh, la)])
+        P = hda_batch(np.exp(tonp(lh)), np.exp(tonp(la)))
         return tg.rps(y_es, P)
 
     for e in range(epochs):
@@ -222,15 +241,24 @@ def run(args):
 
     ev = D["ev"]
     TR, ES = make_split_tensors(D, args.w)
-    es_lhla, ev_lhla, wc_lhla = [], [], []
-    seed_rps = []
+    RATES.mkdir(exist_ok=True)
+    es_lhla, ev_lhla, wc_lhla, seed_rps = [], [], [], []
     for s in range(args.seeds):
+        sc = RATES / f"{args.name}.s{s}.npz"                 # per-seed checkpoint (resume across kills)
+        if sc.exists():
+            zc = np.load(sc)
+            es_lhla.append((zc["es_lh"], zc["es_la"])); ev_lhla.append((zc["ev_lh"], zc["ev_la"]))
+            wc_lhla.append((zc["wc_lh"], zc["wc_la"])); seed_rps.append(float(zc["brps"]))
+            print(f"  seed {s}: resumed from cache (earlystop rps={float(zc['brps']):.4f})", flush=True)
+            continue
         net, brps, ep = train_one(s, D, TR, ES, args.beta, args.epochs)
-        seed_rps.append(brps)
-        es_lhla.append(infer(net, D["Xhn"][D["es"]], D["Rh"][D["es"]], D["Xan"][D["es"]], D["Ra"][D["es"]], D["CTXn"][D["es"]]))
-        ev_lhla.append(infer(net, D["Xhn"][ev], D["Rh"][ev], D["Xan"][ev], D["Ra"][ev], D["CTXn"][ev]))
-        wc_lhla.append(infer(net, wXhn, wRh, wXan, wRa, wCTXn))
-        print(f"  seed {s}: earlystop rps={brps:.4f} (stopped e={ep})", flush=True)
+        esr = infer(net, D["Xhn"][D["es"]], D["Rh"][D["es"]], D["Xan"][D["es"]], D["Ra"][D["es"]], D["CTXn"][D["es"]])
+        evr = infer(net, D["Xhn"][ev], D["Rh"][ev], D["Xan"][ev], D["Ra"][ev], D["CTXn"][ev])
+        wcr = infer(net, wXhn, wRh, wXan, wRa, wCTXn)
+        np.savez_compressed(sc, es_lh=esr[0], es_la=esr[1], ev_lh=evr[0], ev_la=evr[1],
+                            wc_lh=wcr[0], wc_la=wcr[1], brps=brps)
+        es_lhla.append(esr); ev_lhla.append(evr); wc_lhla.append(wcr); seed_rps.append(brps)
+        print(f"  seed {s}: earlystop rps={brps:.4f} (stopped e={ep}); cached", flush=True)
 
     # shared DC-rho tuned on earlystop lane by league points (production convention)
     best_rho = max(RHOS, key=lambda r: points_of(grids_from(es_lhla, r), D["hg"][D["es"]], D["ag"][D["es"]]))
@@ -343,12 +371,97 @@ def regen_report():
                 cells.append(cell)
             L.append(f"| {lane} | {s['n']} | " + " | ".join(cells) + " |")
         L.append("")
+    # fold in any per-run diagnostics sections (written by --diagnose) for registered runs
+    names = {r["name"] for r in rows}
+    diag_files = sorted(DIAG.glob("*.md")) if DIAG.exists() else []
+    diags = [f for f in diag_files if f.stem in names]
+    if diags:
+        L += ["---", "", "# Diagnostics", ""]
+        for f in diags:
+            L.append(f.read_text(encoding="utf-8")); L.append("")
     REPORT.write_text("\n".join(L), encoding="utf-8")
     print(f"  regenerated {REPORT.name} ({len(rows)} run{'s' if len(rows) != 1 else ''})", flush=True)
 
 
+def _md_table(header, rows):
+    out = ["| " + " | ".join(header) + " |", "|" + "---|" * len(header)]
+    out += ["| " + " | ".join(str(c) for c in r) + " |" for r in rows]
+    return out
+
+
 def diagnose(name):
-    print(f"--diagnose is implemented in Step 6 (name='{name}'); rates cache at {RATES / (name + '.npz')}")
+    """Prior-coasting diagnostics for a registered run (grid-NLL vs null, per-scoreline lift,
+    calibration reliability, sharpness) written to diagnostics/<name>.md and folded into the report."""
+    cache = RATES / f"{name}.npz"
+    if not cache.exists():
+        sys.exit(f"no rates cache for '{name}' at {cache} (run the experiment first)")
+    z = np.load(cache, allow_pickle=True)
+    rho = float(z["rho"]); split = str(z["split"])
+    prior = z["prior"]
+    modal = np.unravel_index(prior.argmax(), prior.shape)
+    all_tag = "canonical_test" if split == "canonical" else "eval"
+    ev_grids = grids_from_arrays(z["ev_lh"], z["ev_la"], rho)
+    wc_grids = grids_from_arrays(z["wc_lh"], z["wc_la"], rho)
+    natl = z["ev_natl"]
+    lanes = {
+        f"{all_tag}_all": (ev_grids, z["ev_y"], z["ev_hg"], z["ev_ag"]),
+        f"{all_tag}_natl": (ev_grids[natl], z["ev_y"][natl], z["ev_hg"][natl], z["ev_ag"][natl]),
+        "wc_slate": (wc_grids, z["wc_y"], z["wc_hg"], z["wc_ag"]),
+    }
+    S = {ln: metrics.suite(g, y, hg, ag, prior) for ln, (g, y, hg, ag) in lanes.items()}
+
+    L = [f"## Diagnostics: {name}", "",
+         f"Prior null = train-split empirical score grid; modal scoreline = **{modal[0]}-{modal[1]}** "
+         f"(P={prior[modal]:.3f}). DC rho={rho}. Does the model add score-level information, or coast on "
+         "the modal-score prior?", "",
+         "**(1) Score-level information — grid-NLL vs the empirical-prior null**", ""]
+    L += _md_table(["lane", "n", "grid_nll", "grid_nll_prior", "grid_info (nats)", "sharpness (nats)", "ece"],
+                   [[ln, S[ln]["n"], f"{S[ln]['grid_nll']:.4f}", f"{S[ln]['grid_nll_prior']:.4f}",
+                     f"{S[ln]['grid_info']:+.4f}", f"{S[ln]['sharpness']:.3f}", f"{S[ln]['ece_outcome']:.4f}"]
+                    for ln in lanes])
+    # per-scoreline lift on the two on-target lanes
+    for ln in (f"{all_tag}_natl", "wc_slate"):
+        g, y, hg, ag = lanes[ln]
+        pred_rows, true_rows = metrics.lift_table(g, hg, ag, prior)
+        L += ["", f"**(2) Per-scoreline lift — {ln}.** EV-pick precision vs prior cell prob "
+              "(off-modal picks with precision > prior_p = genuine score information):", ""]
+        L += _md_table(["EV-pick", "picked", "hits", "precision", "prior_p", "off-modal?"],
+                       [[r["score"], r["picked"], r["hit"], f"{r['precision']:.3f}", f"{r['prior_p']:.3f}",
+                         "" if (int(r["score"].split("-")[0]), int(r["score"].split("-")[1])) == modal else "yes"]
+                        for r in pred_rows[:12]])
+        L += ["", f"Top-3-mass recall by true scoreline — {ln}:", ""]
+        L += _md_table(["true score", "n", "top3_recall"],
+                       [[r["score"], r["n"], f"{r['top3_recall']:.3f}"] for r in true_rows[:10]])
+    # calibration reliability on the national lane
+    ln = f"{all_tag}_natl"
+    g, y, hg, ag = lanes[ln]
+    rel = metrics.reliability(g, y, hg, ag)
+    L += ["", f"**(3) Calibration reliability — {ln}** (outcome max-prob & exact-cell):", ""]
+    L += _md_table(["kind", "pred_bin", "mean_pred", "observed", "n"],
+                   [[k, f"{r['lo']:.2f}-{r['hi']:.2f}", f"{r['pred']:.3f}", f"{r['obs']:.3f}", r["n"]]
+                    for k in ("outcome", "exact") for r in rel[k]])
+    # verdict
+    nat = S[f"{all_tag}_natl"]; wc = S["wc_slate"]
+    ng, nhg, nag = lanes[f"{all_tag}_natl"][0], lanes[f"{all_tag}_natl"][2], lanes[f"{all_tag}_natl"][3]
+    nat_pred_rows = metrics.lift_table(ng, nhg, nag, prior)[0]
+    off = [r for r in nat_pred_rows
+           if (int(r["score"].split("-")[0]), int(r["score"].split("-")[1])) != modal]
+    off_prec = sum(r["hit"] for r in off) / max(1, sum(r["picked"] for r in off))
+    off_prior = np.mean([r["prior_p"] for r in off]) if off else float("nan")
+    L += ["", "**(4) Verdict.**",
+          f"On the national lane the model adds **{nat['grid_info']:+.4f} nats** of score-level "
+          f"information over the modal-score prior (grid_nll {nat['grid_nll']:.3f} vs prior "
+          f"{nat['grid_nll_prior']:.3f}); exact-score lift **{nat['exact_lift']:.2f}×** the always-modal "
+          f"rate; outcome ECE {nat['ece_outcome']:.3f}; sharpness {nat['sharpness']:.2f} nats. "
+          f"Off-modal EV-picks ({sum(r['picked'] for r in off)} of them) hit at precision "
+          f"**{off_prec:.3f}** vs mean prior cell prob {off_prior:.3f} — "
+          f"{'the model is extracting genuine off-modal score signal' if nat['grid_info'] > 0.02 and off_prec > off_prior else 'the model is largely coasting on the modal prior'}. "
+          f"WC-slate grid_info {wc['grid_info']:+.4f}, exact_lift {wc['exact_lift']:.2f}×.", ""]
+
+    DIAG.mkdir(exist_ok=True)
+    (DIAG / f"{name}.md").write_text("\n".join(L), encoding="utf-8")
+    print(f"  wrote diagnostics/{name}.md")
+    regen_report()
 
 
 def main():
