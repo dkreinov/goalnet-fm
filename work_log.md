@@ -180,3 +180,9 @@ Plan: plans/goalnet-ablation-phase-2-loss-levers-plan.md (autonomous, pause-betw
 - GATE verdicts (all vs baseline-beta3-w15): β0 ADOPT-candidate (+0.125 natl), β1 pass, W1 ADOPT-candidate (+0.086 natl), decay-hl2/4/8 pass-but-subsumed, W40 REJECT (wc pg −0.058). ADOPTED = β0 + W1 (best-rounded, robust, wins both splits); decay DEFERRED.
 - Files: experiments/ablation/registry.jsonl (+4 rows: combo/decay8/canon/s10), RESULTS_ABLATION.md (+combo diagnostics), work_log.md
 - Timestamp: 2026-07-22
+
+## Step 6: Phase 2→3 handoff
+- Status: ✅ Complete
+- Wrote plans/goalnet-ablation-phase-2-to-3-handoff.md (runs+verdicts table, adopted config β0+W1 with rationale, canonical confirmation, Phase-3 implications: recency subsumed so momentum must beat time-decay, --ctx-extra mechanics, ops notes, resume pointer). Updated plans/goalnet-ablation-phase-state.md (phase 2→COMPLETE, current 3, new baseline=combo-beta0-w1). Updated memory fm-modeling-roadmap.md with Phase-2 verdict (context-clear-proof).
+- Validation: handoff sections present; phase-state shows phase 3.
+- Timestamp: 2026-07-22

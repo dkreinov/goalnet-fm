@@ -22,18 +22,23 @@ day-by-day WC2026 replay backtest.
 | # | Phase | Status | Plan file | Handoff |
 |---|---|---|---|---|
 | 1 | Harness v2 + diagnostics + re-baseline | ✅ COMPLETE (2026-07-21) | plans/goalnet-ablation-phase-1-harness-plan.md | plans/goalnet-ablation-phase-1-to-2-handoff.md |
-| 2 | Loss-level levers: β purity, time-decay, natl-weight recheck | PLANNED (not started) | plans/goalnet-ablation-phase-2-loss-levers-plan.md | — |
-| 3 | Context features: Elo momentum; stage/rest backfill + feature | skeleton | — | — |
+| 2 | Loss-level levers: β purity, time-decay, natl-weight recheck | ✅ COMPLETE (2026-07-22) | plans/goalnet-ablation-phase-2-loss-levers-plan.md | plans/goalnet-ablation-phase-2-to-3-handoff.md |
+| 3 | Context features: Elo momentum; stage/rest backfill + feature | PLANNED (not started) | plans/goalnet-ablation-phase-3-context-features-plan.md | — |
 | 4 | Market anchor: BetExplorer scrape → de-vigged odds feature | skeleton | — | — |
 | 5 | Architecture: cross-team attention; plus-minus ratings | skeleton | — | — |
 | 6 | WC2026 day-by-day replay backtest + model selection + production retrain | skeleton | — | — |
 
-**Current phase:** 2 (PLANNED — plans/goalnet-ablation-phase-2-loss-levers-plan.md, 2026-07-21; awaiting execution go). SESSION_MODE: autonomous. PHASE_MODE: pause-between-phases.
+**Current phase:** 3 (PLANNED — plans/goalnet-ablation-phase-3-context-features-plan.md; awaiting execution go). SESSION_MODE: autonomous. PHASE_MODE: pause-between-phases.
 **Last completed step:** Phase 1 COMPLETE (Steps 3→7 this session: commits f93d359, 6e2d7e6, e95c741,
 7db6727, 275db2e, + this Step-7 commit). Full detail in plans/goalnet-ablation-phase-1-to-2-handoff.md.
-**Next action:** execute plans/goalnet-ablation-phase-2-loss-levers-plan.md from Step 0 (preflight
-smoke of --decay-halflife/--w plumbing), then Steps 1→6. ~6-7h of sequential 1h runs; keep session
-active (bg jobs idle-killed; per-seed caches resume interrupted runs under the same --name).
+**Next action:** execute plans/goalnet-ablation-phase-3-context-features-plan.md. NEW adopted baseline
+for all Phase-3 diffs = `combo-beta0-w1` (config `--beta 0 --w 1`), NOT the old baseline-beta3-w15.
+Recency is already captured (decay subsumed by β0+W1) so Phase-3 momentum/trajectory features must add
+signal BEYOND time-decay. Detached scheduled-task pattern (experiments/ablation/run_phase2_*.ps1
+templates) survives idle-kills; per-seed caches resume.
+**Phase-2 result in one line:** stripping the two points-biases (β=3→0, W=15→1) adds +0.10..+0.13 nats
+of national/WC score-level info, flips the club lane positive, keeps exact-pick ability (1.33) and WC
+points (pg 0.933/0.971) — adopted β0+W1 as the experiment default; production goalnet.pt unchanged.
 **Phase-1 result in one line:** harness reproduces production bit-for-bit (seed-7 TEST rps 0.2134);
 pooled reference registered (eval_natl grid_info +0.127, wc_slate +0.146); the model adds genuine
 off-modal score info on national/WC (EV-picks 1-0 not the modal 1-1) but sits at/below the prior on
