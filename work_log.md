@@ -169,3 +169,14 @@ Plan: plans/goalnet-ablation-phase-2-loss-levers-plan.md (autonomous, pause-betw
 - Validation: registry has 9 rows; gate applied to all 6 experimental levers (5 pass, W=40 fails); log ALL DONE 2026-07-21T22:00.
 - Files: experiments/ablation/registry.jsonl (+5 rows), RESULTS_ABLATION.md (regenerated), run_phase2_remaining.ps1 (detached-run tooling)
 - Timestamp: 2026-07-21
+
+## Step 4: Verdicts + combo + robustness + canonical (Δ tables)
+- Status: ✅ Complete
+- Combo stacking (β0+W1): natl grid_info +0.2432 (β0-alone +0.2522, W1-alone +0.2126 — combo ≈ β0, within seed noise; the two de-biasing levers do NOT stack additively because β0 already captures most of it), but combo is BEST-ROUNDED: wc grid_info +0.2992 (best), all +0.0762 (best, POSITIVE — beats prior on every lane now vs baseline's −0.032), natl exact_lift 1.33 (recovers the pick ability β0-alone lost at 1.22), wc pg 0.933 (best). Dropping the W upweight also simplifies the model.
+- decay on top: combo+decay8 Δnatl +0.0045 / Δwc +0.0080 (both within ~0.02 noise), wc pg −0.019 → decay adds nothing once β and W biases are removed; its standalone gain overlapped with them. Decay DEFERRED to Phase 3.
+- Robustness: 10-seed vs 5-seed β0+W1 = natl +0.2414 vs +0.2432 (Δ0.0018), wc +0.294 vs +0.299, all +0.0764 vs +0.0762, pg 0.933 both — 5-seed estimate is stable.
+- Canonical continuity: combo-beta0-w1-canon beats baseline-beta3-w15-canonical on ALL lanes — canonical_test_natl gInfo +0.297 vs +0.234 (rps 0.169 vs 0.175), canonical_test_all +0.073 vs −0.000 (rps 0.209 vs 0.211), wc pg 0.971 vs 0.942. Debiasing wins on both splits AND improves reference points.
+- Diagnostics: run_ablation.py --diagnose combo-beta0-w1 → national off-modal EV-pick precision 0.129 vs prior 0.065 (genuine off-modal signal, stronger than baseline's 0.118 vs 0.058); ECE 0.054. (Template nit: generic verdict text still says "upweighted (W)" though adopted config is W=1 — cosmetic; all-lane grid_info now +0.076 positive, so model beats prior on every lane.)
+- GATE verdicts (all vs baseline-beta3-w15): β0 ADOPT-candidate (+0.125 natl), β1 pass, W1 ADOPT-candidate (+0.086 natl), decay-hl2/4/8 pass-but-subsumed, W40 REJECT (wc pg −0.058). ADOPTED = β0 + W1 (best-rounded, robust, wins both splits); decay DEFERRED.
+- Files: experiments/ablation/registry.jsonl (+4 rows: combo/decay8/canon/s10), RESULTS_ABLATION.md (+combo diagnostics), work_log.md
+- Timestamp: 2026-07-22
