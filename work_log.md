@@ -49,3 +49,20 @@ Status: In Progress
 - Key decisions: CHASE=gamble default + contrarian escalation on SF/Final (β0.35); SF/Final ntfy approval-window; Spain-out->gamble-everywhere failsafe; verdict recomputed every cycle from single bearer (no 2nd refresh).
 - Deviations: inlined MULT/FUTURES/P_WIN (circular import via read_standings avoided).
 - Status: Complete
+
+# Work Log — GoalNet ablation program, Phase 1 (harness)
+
+## Task: Reproducible ablation harness v2 + diagnostics + re-baseline
+Started: 2026-07-21
+Status: In Progress
+Plan: plans/goalnet-ablation-phase-1-harness-plan.md (SESSION_MODE=autonomous, PHASE_MODE=pause-between-phases)
+
+---
+
+## Step 1: Inventory + freeze harness design (DESIGN.md)
+- Status: ✅ Complete
+- Summary: Read eval_harness.py (full), eval_seasons.py, dataset/context/wc_cache shapes. Froze design: split policy = option (b) pooled eval (early-stop on train tail, eval val∪test <2026-06-11, natl n≈400) + canonical kept for continuity; metric suite (grid_nll vs train-only empirical prior null, grid_info, ece, sharpness, exact_lift, pts_g_31 reference); registry JSONL schema; runner CLI.
+- Deviations: (1) wc_cache.npz found STALE (90 games; results.json has all 104 finished with lineups) — plan assumed it was final; Step 3 rebuilds+freezes to 104. (2) Bash PATH has no `python` — full interpreter path recorded in DESIGN.md and used everywhere. (3) validation grep capitalization fixed ('Split policy').
+- Files changed: experiments/ablation/DESIGN.md
+- Git commit: (next line)
+- Timestamp: 2026-07-21
