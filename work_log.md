@@ -138,3 +138,25 @@ Plan: plans/goalnet-ablation-phase-1-harness-plan.md (SESSION_MODE=autonomous, P
 - Key result: reproducible one-command ablation harness, PROVEN bit-for-bit faithful to production (seed-7 match). Two baseline rows registered. Prior-coasting question answered: model adds genuine off-modal score info on national/WC (EV-picks 1-0 not modal 1-1), coasts on prior for club games.
 - Deviations of note: fixed 3 lazy-NpzFile perf bugs + 1 memory-churn crash; ran two baselines (canonical anchor + pooled ref) per DESIGN; honored frozen lane names (eval_all) over the plan's pre-freeze test_all; added per-seed resume + val vectorization to survive idle-kills and multi-hour CPU runs.
 - Status: COMPLETE. STOP at phase boundary (PHASE_MODE=pause-between-phases).
+
+---
+# Work Log — GoalNet ablation program, Phase 2 (loss-level levers)
+Plan: plans/goalnet-ablation-phase-2-loss-levers-plan.md (autonomous, pause-between-phases)
+
+## Step 0: Preflight — verify decay + W plumbing
+- Status: ✅ Complete
+- Summary: 3 tiny smokes (nodecay/decay4/w1) all exit 0. Behavioral rps identical at 2-3 epochs (too few to diverge unweighted val at 4dp) → verified plumbing DIRECTLY instead: load_data decay array = all-1.0 (off), [0.327,1.0] at hl4, [0.107,1.0] at hl2 (hl2 sharper ✓, newest=1.0 ✓); make_split_tensors wt national-row mean = 1.0 at W=1 / 15.0 at W=15, club rows stay 1.0. Both flags reach the loss weights.
+- Cleanup: removed 3 smoke rows + caches; registry back to 2 baselines; report regenerated identical (tree clean).
+- Git commit: skipped — no tracked-file changes after cleanup.
+- Timestamp: 2026-07-21
+
+## Step 1: β sweep — the purity question
+- Status: ✅ Complete
+- Runs: beta0-w15 (50.9min, rho 0.0), beta1-w15 (63.3min, rho -0.15). Both exit 0, 5 seeds.
+- Δgrid_info vs baseline (β=3): eval_all β0 +0.104 / β1 +0.087 (baseline was NEGATIVE −0.032 → both fix it); eval_natl β0 +0.125 / β1 +0.117; wc_slate β0 +0.135 / β1 +0.139. rps improves on every lane for both (β0 more). ece: β0 improves all lanes; β1 improves eval_all but worsens natl/wc.
+- Cost (reference only): exact_lift — β1 preserves baseline (natl 1.31, wc 1.17); β0 drops (1.22, 1.00). pts_g_31 natl: base 0.816 > β0 0.804 > β1 0.786.
+- ANSWER (purity): β=3's decision term is a POINTS-BIAS that badly hurts the calibrated-distribution objective — removing it (β=0) adds +0.10 to +0.14 nats of grid-info on every lane and fixes the negative eval_all coasting, at the price of the reference exact-pick metric. Confirms the Phase-1 hypothesis exactly.
+- GATE: both β=0 and β=1 PASS (eval_natl grid_info ≥ +0.02, no wc_slate regression). β=0 leads on ALL gated/calibration metrics (grid_info, rps, ece, natl/wc pts_g); β=1's only advantage is exact_lift, which the separate pick-layer (DESIGN: core=distribution, points=downstream head) is meant to handle from a better-calibrated grid. → β=0 front-runner; final adopt in Step 4 (levers may interact).
+- Validation: registry assertion passed (beta0/beta1 rows, config.beta ∈ {0,1}, grid_nll present); Δ table printed.
+- Files: experiments/ablation/registry.jsonl (+2 rows), RESULTS_ABLATION.md (regenerated)
+- Timestamp: 2026-07-21
