@@ -142,15 +142,25 @@ def points_of(grids, hg, ag):
     return tot
 
 
-def train_one(seed, D, beta, W, epochs, patience=25):
+def make_split_tensors(D, W):
+    """Build the seed-independent TRAIN + earlystop tensors ONCE (reused across seeds — the T()
+    bytearray copy that NumPy-2/torch compat requires is expensive, so never rebuild per seed)."""
+    tr, es = D["tr"], D["es"]
+    TR = {"Xh": T(D["Xhn"][tr]), "Rh": T(D["Rh"][tr]), "Xa": T(D["Xan"][tr]), "Ra": T(D["Ra"][tr]),
+          "C": T(D["CTXn"][tr]), "hg": T(D["hg"][tr]), "ag": T(D["ag"][tr]),
+          "wt": T((np.where(D["natl"][tr], W, 1.0) * D["decay"][tr]).astype(np.float32))}
+    ES = {"Xh": T(D["Xhn"][es]), "Rh": T(D["Rh"][es]), "Xa": T(D["Xan"][es]), "Ra": T(D["Ra"][es]),
+          "C": T(D["CTXn"][es]), "y": D["y"][es]}
+    return TR, ES
+
+
+def train_one(seed, D, TR, ES, beta, epochs, patience=25):
     """Train one GoalNet on TRAIN (early-stop on earlystop lane by RPS). Mirrors train_goals.main."""
     torch.manual_seed(seed); np.random.seed(seed)
-    tr, es = D["tr"], D["es"]
-    Xhtr, Rhtr, Xatr, Ratr, Ctr = (T(D["Xhn"][tr]), T(D["Rh"][tr]), T(D["Xan"][tr]), T(D["Ra"][tr]), T(D["CTXn"][tr]))
-    hgtr, agtr = T(D["hg"][tr]), T(D["ag"][tr])
-    wt = T((np.where(D["natl"][tr], W, 1.0) * D["decay"][tr]).astype(np.float32))
-    y_es = D["y"][es]
-    Vh, Vrh, Va_, Vra, Cv = (T(D["Xhn"][es]), T(D["Rh"][es]), T(D["Xan"][es]), T(D["Ra"][es]), T(D["CTXn"][es]))
+    Xhtr, Rhtr, Xatr, Ratr, Ctr = TR["Xh"], TR["Rh"], TR["Xa"], TR["Ra"], TR["C"]
+    hgtr, agtr, wt = TR["hg"], TR["ag"], TR["wt"]
+    y_es = ES["y"]
+    Vh, Vrh, Va_, Vra, Cv = ES["Xh"], ES["Rh"], ES["Xa"], ES["Ra"], ES["C"]
     net = tg.GoalNet(D["A"], D["nctx"])
     opt = torch.optim.AdamW(net.parameters(), lr=2e-3, weight_decay=1e-4)
     sched = torch.optim.lr_scheduler.CosineAnnealingLR(opt, epochs)
@@ -211,10 +221,11 @@ def run(args):
     wy = np.where(whg > wag, 0, np.where(whg == wag, 1, 2))
 
     ev = D["ev"]
+    TR, ES = make_split_tensors(D, args.w)
     es_lhla, ev_lhla, wc_lhla = [], [], []
     seed_rps = []
     for s in range(args.seeds):
-        net, brps, ep = train_one(s, D, args.beta, args.w, args.epochs)
+        net, brps, ep = train_one(s, D, TR, ES, args.beta, args.epochs)
         seed_rps.append(brps)
         es_lhla.append(infer(net, D["Xhn"][D["es"]], D["Rh"][D["es"]], D["Xan"][D["es"]], D["Ra"][D["es"]], D["CTXn"][D["es"]]))
         ev_lhla.append(infer(net, D["Xhn"][ev], D["Rh"][ev], D["Xan"][ev], D["Ra"][ev], D["CTXn"][ev]))

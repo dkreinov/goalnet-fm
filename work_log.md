@@ -88,3 +88,17 @@ Plan: plans/goalnet-ablation-phase-1-harness-plan.md (SESSION_MODE=autonomous, P
 - Deviations: (1) Plan's inline validation string referenced r['metrics']['test_all']; the FROZEN DESIGN.md lane name is 'eval_all' (pooled) / 'canonical_test_all' (canonical). Honored the frozen contract and asserted against 'eval_all' — documented. (2) Cleared the throwaway smoke row from registry.jsonl (committed empty) so Step-5 baseline is the true row 1; removed rates/smoke.npz and gitignored rates/ (regenerable per-run caches; plan's Step-4 git-add list already excludes them).
 - Files changed: experiments/ablation/run_ablation.py (new), experiments/ablation/registry.jsonl (new, empty), experiments/ablation/RESULTS_ABLATION.md (new, generated), experiments/ablation/.gitignore (new, rates/)
 - Timestamp: 2026-07-21
+
+## Step 5a: Kick off baseline runs (background)
+- Status: ✅ Complete (launched)
+- Summary: Background job bfx49cqf3 runs BOTH baselines sequentially (avoids CPU/mem contention that OOM'd earlier): (1) baseline-beta3-w15-canonical --split canonical (tripwire, must reproduce historical TEST rps 0.2130-0.2145) then (2) baseline-beta3-w15 --split pooled (reference row). Both --seeds 5 --epochs 150. Log: data/_ablation_baseline.log.
+- Validation: launch confirmed within 5 min — "split=canonical A=62 nctx=10 train=47,386 earlystop=11,210 eval=10,457" (matches splits.py report); 14 python procs alive.
+- Deviations: Launched two runs (canonical anchor + pooled reference) per DESIGN.md "Baseline anchoring", not just the single pooled run named in the plan's Step-5a command; both are required by Step 5b.
+- Git commit: skipped — no file changes.
+- Timestamp: 2026-07-21
+
+## Step 5a (addendum): baseline crash + memory fix + relaunch
+- First launch (bfx49cqf3) died: canonical seed 0/1 trained fine, then the process exited 1 with NO Python traceback between seed 1 and seed 2 (native torch crash / OOM), and the outer job was later externally killed while the pooled run was importing torch. No registry row written; no heavy orphan processes left (checked — all surviving python.exe <20MB).
+- Fix: run_ablation.py rebuilt the large TRAIN+earlystop tensors (~130MB each, via the bytearray copy that NumPy-2/torch compat forces in T()) on EVERY seed. Refactored to build them ONCE (make_split_tensors) and reuse across seeds — lower peak memory + faster. Verified with a 2-seed/2-epoch smoke: exit 0, seeds now diversify (0.2130 vs 0.2129); the earlier identical 0.2098 across seeds was rounding coincidence at that convergence point.
+- Relaunched canonical alone (b2xdvttws); seed 0 reproduced rps=0.2098 @e26. Canonical is slow (~18min/seed: 11,210-sample val loop each epoch); pooled will follow after it completes.
+- Timestamp: 2026-07-21
