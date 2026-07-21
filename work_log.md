@@ -73,3 +73,10 @@ Plan: plans/goalnet-ablation-phase-1-harness-plan.md (SESSION_MODE=autonomous, P
 - Deviations: none (NumPy2/torch compiled-against-1.x warning banner observed — pre-existing env condition, non-fatal, everything runs).
 - Files changed: experiments/ablation/metrics.py
 - Timestamp: 2026-07-21
+
+## Step 3: Split/eval-set module
+- Status: ✅ Complete
+- Summary: experiments/ablation/splits.py validated — `--report` prints counts table + LEAKAGE CHECKS PASS. Eval lanes: canonical eval n=10,457 (natl 203, 2025-08-01..2026-06-14); pooled eval n=21,663 (natl 397 ≥350 ✓, 2024-08-01..2026-06-08); train/earlystop/eval disjoint. Built + froze wc_inputs.npz = 104 finished WC2026 games (== results.json finished count), 197/2288 imputed starters; DB-has-zero-WC2026 assertion held.
+- Deviations: (1) Fixed two lazy-NpzFile bugs the written code shipped with — `cz["ctx"]` was re-decompressed inside the 90,279-item cmap comprehension (each access = full 3.44MB decompress), which crashed with ArrayMemoryError on first run; `z["Xh"]` (~188MB) was re-decompressed 4× in the role_mean comprehension. Both now materialize once. (2) Committed the frozen wc_inputs.npz (95KB) alongside splits.py — not in the plan's file list, but it is the frozen on-target benchmark (DESIGN.md "built once then FROZEN"), same treatment as the committed wc_cache.npz; version-controlling guarantees the freeze rather than relying on rebuild.
+- Files changed: experiments/ablation/splits.py, experiments/ablation/wc_inputs.npz (new, frozen)
+- Timestamp: 2026-07-21

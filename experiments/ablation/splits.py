@@ -38,8 +38,9 @@ def load_dataset(npz="players_imp.npz"):
     out["y"] = z["y"].astype(np.int64); out["mids"] = [int(m) for m in z["mids"]]
     out["attrs"] = [str(a) for a in z["attrs"]]
     cz = np.load(ROOT / "data" / "context.npz")
-    cmap = {int(m): cz["ctx"][i] for i, m in enumerate(cz["mids"])}
-    nctx = cz["ctx"].shape[1]
+    ctx_arr = cz["ctx"]; ctx_mids = cz["mids"]        # materialize once (NpzFile is lazy)
+    cmap = {int(m): ctx_arr[i] for i, m in enumerate(ctx_mids)}
+    nctx = ctx_arr.shape[1]
     out["CTX"] = np.stack([cmap.get(m, np.zeros(nctx, np.float32)) for m in out["mids"]]).astype(np.float32)
     con = db.connect()
     meta = {r[0]: (r[1], r[2], r[3]) for r in
@@ -102,7 +103,8 @@ def build_wc_inputs(force=False):
     # role means from the canonical train split (imputation vectors; same convention as production)
     tr = z["dates"] < TR_END
     Rh_ = z["Rh"].astype(np.int64)
-    role_mean = {r: z["Xh"][tr][Rh_[tr] == r].mean(0) for r in range(4)}
+    Xh_tr = z["Xh"][tr]; Rh_tr = Rh_[tr]              # materialize once (NpzFile is lazy)
+    role_mean = {r: Xh_tr[Rh_tr == r].mean(0) for r in range(4)}
 
     def vec_for(full):
         s = snap.get(db.norm(full))
