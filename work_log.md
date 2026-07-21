@@ -66,3 +66,10 @@ Plan: plans/goalnet-ablation-phase-1-harness-plan.md (SESSION_MODE=autonomous, P
 - Files changed: experiments/ablation/DESIGN.md
 - Git commit: (next line)
 - Timestamp: 2026-07-21
+
+## Step 2: Metrics module with self-test
+- Status: ✅ Complete
+- Summary: experiments/ablation/metrics.py — frozen suite (suite(), empirical_prior(), ece_outcome(), lift_table(), reliability()). Analytic self-test: uniform grid (max entropy, negative grid_info vs prior), delta-on-truth (nll→0, exact=1, ece≈0), prior-as-grid (grid_info==0 exactly, lift==1 when EV-pick==modal). SELFTEST PASS.
+- Deviations: none (NumPy2/torch compiled-against-1.x warning banner observed — pre-existing env condition, non-fatal, everything runs).
+- Files changed: experiments/ablation/metrics.py
+- Timestamp: 2026-07-21
