@@ -28,8 +28,18 @@ day-by-day WC2026 replay backtest.
 | 5 | Architecture: cross-team attention; plus-minus ratings | skeleton | — | — |
 | 6 | WC2026 day-by-day replay backtest + model selection + production retrain | skeleton | — | — |
 
-**Current phase:** 1 (not started). SESSION_MODE: not chosen yet. PHASE_MODE: not chosen yet.
-**Last completed step:** none. **Next action:** confirm modes, execute Phase 1 Step 1.
+**Current phase:** 1 (in progress). SESSION_MODE: autonomous. PHASE_MODE: pause-between-phases.
+**Last completed step:** Step 2 (commit 9354835). Step 3's `experiments/ablation/splits.py` is
+WRITTEN but NOT yet validated/committed — resume by running its validation:
+`"C:\Users\youruser\AppData\Local\Programs\Python\Python312\python.exe" experiments/ablation/splits.py --report`
+(expect counts table + `LEAKAGE CHECKS PASS`; it also builds the frozen 104-game wc_inputs.npz).
+**Next action:** validate+commit Step 3, then Steps 4→7 per the phase-1 plan.
+**Session facts a fresh context needs:** bare `python` NOT on Bash PATH — always use the full
+interpreter path above; NumPy2-vs-torch warning banner at import is pre-existing and non-fatal;
+`data/players_imp.npz` = 69,053 matches ending 2026-06-14; DB has ZERO WC2026 matches (pre-WC
+context is leakage-free for the slate); worldcup results.json = 104 finished games, all with
+lineups; old `experiments/wc_cache.npz` (90 games, rates-only) is superseded for the harness by
+`experiments/ablation/wc_inputs.npz` (raw inputs, built by splits.py) but kept for eval_harness.
 
 ## Frozen contracts (updated as phases complete)
 
