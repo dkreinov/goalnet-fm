@@ -483,3 +483,20 @@ home boost. Built venue.npz ([true_home, neutral, venue_known] from 98%-covered 
   failure mode as club-value and FIFA (held-out gain, WC-slate reversal). NOT ADOPTED; production unchanged.
 - Kept for reuse: `src/build_venue.py`, `train_goals.py --venue`, `experiments/homeadv_ablation.py`,
   compare_models venue-awareness. Retest if a real neutral-venue national test set (not WC-bracket) appears.
+
+## Ablation Phase 2 — loss-level de-biasing (2026-07-22, adopted for experiments)
+
+The reproducible ablation harness (experiments/ablation/) re-baselined the production recipe under
+distributional metrics and found the two points-oriented knobs were hurting probability calibration:
+- **β=3 decision term** (EV-points softmax) and **W=15 national upweight** both traded calibrated-
+  scoreline quality for exact-pick bias. Baseline eval_all grid-NLL was actually WORSE than the
+  empirical-prior null (grid_info −0.032).
+- Stripping both — **β=0, W=1 (pure Poisson, no upweight)** — adds +0.10..+0.13 nats of score-level
+  information on the national/WC lanes, flips the club lane positive, improves RPS and calibration,
+  AND keeps the exact-pick ability (exact_lift 1.33) and WC points (pg 0.933 pooled / 0.971 canonical,
+  vs baseline 0.923 / 0.942). Robust at 10 seeds; wins on both canonical and pooled splits.
+- Time-decay sample weighting helped standalone but was subsumed once the biases were removed → deferred.
+
+Adopted as the harness default core-training config for Phase-3+ experiments (β=0, W=1). Production
+goalnet.pt (β=3, W=15, natl-finetune) is unchanged — a production retrain is a Phase-6 decision.
+Full numbers: experiments/ablation/RESULTS_ABLATION.md; program state: plans/goalnet-ablation-phase-state.md.

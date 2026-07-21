@@ -113,3 +113,30 @@ within seed noise — harness-bug tripwire) and `baseline-beta3-w15` (pooled —
 Phase 2+ experiments diff against). WC-slate lane additionally cross-checked against production
 goalnet.pt's known realized score on the same 104 games (computed once via compare_models
 convention) — recorded in the report preamble, not as a registry row.
+
+## Phase-2 adopted defaults (frozen 2026-07-22)
+
+Phase 2 tested loss-level levers against `baseline-beta3-w15`. **Adopted core-training config
+for all Phase-3+ ablation experiments: `--beta 0 --w 1`** (pure Poisson, no national upweight).
+
+Rationale (registry evidence, pooled eval_natl grid_info vs baseline +0.1268):
+- **β=0** (drop the EV-points decision term): +0.2522 (Δ+0.125) — strongest single lever. The β=3
+  decision term was a points-bias that hurt the calibrated-distribution objective on every lane
+  (baseline eval_all grid_info was NEGATIVE, −0.032).
+- **W=1** (drop the 15× national upweight): +0.2126 (Δ+0.086) — the upweight was the same kind of
+  points-bias; removing it helps both lanes. W=40 (more upweight) fails the gate (wc pg −0.058).
+- **Combo β0+W1 (ADOPTED)**: natl +0.2432, wc **+0.2992** (best), all **+0.0762** (best, now POSITIVE),
+  exact_lift **1.33** (recovers the pick ability β0-alone gave up), wc pg **0.933** (best). The two
+  levers don't stack additively (β0 already captures most of the natl gain) but together give the
+  best-rounded model AND drop an arbitrary hyperparameter. Robust at 10 seeds (natl +0.2414).
+  Canonical split confirms wins on every lane + better WC points (pg 0.971 vs 0.942).
+- **Time-decay: DEFERRED to Phase 3.** hl∈{2,4,8} each beat the β3/W15 baseline standalone
+  (+0.045..+0.080 natl) but non-monotonically (half-life is noise-level), and adding decay-hl8 on top
+  of β0+W1 gives nothing (Δnatl +0.004, wc pg −0.019) — its gain was subsumed by removing the biases.
+  Recency is thus already handled; Phase-3 Elo-momentum/trajectory features must earn their keep by
+  adding signal BEYOND time-decay, not just recency.
+
+`pts_g_31` remained reference-only throughout (never gated); notably the adopted config improves it too.
+The historical production `goalnet.pt` (β=3, W=15, --natl-finetune) is NOT retrained here — production
+retrain is a Phase-6 decision. `src/train_goals.py` is unchanged; the adopted config lives as the
+harness default for experiments.
