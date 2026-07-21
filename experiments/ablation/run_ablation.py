@@ -441,7 +441,7 @@ def diagnose(name):
                    [[k, f"{r['lo']:.2f}-{r['hi']:.2f}", f"{r['pred']:.3f}", f"{r['obs']:.3f}", r["n"]]
                     for k in ("outcome", "exact") for r in rel[k]])
     # verdict
-    nat = S[f"{all_tag}_natl"]; wc = S["wc_slate"]
+    nat = S[f"{all_tag}_natl"]; wc = S["wc_slate"]; alll = S[f"{all_tag}_all"]
     ng, nhg, nag = lanes[f"{all_tag}_natl"][0], lanes[f"{all_tag}_natl"][2], lanes[f"{all_tag}_natl"][3]
     nat_pred_rows = metrics.lift_table(ng, nhg, nag, prior)[0]
     off = [r for r in nat_pred_rows
@@ -456,7 +456,13 @@ def diagnose(name):
           f"Off-modal EV-picks ({sum(r['picked'] for r in off)} of them) hit at precision "
           f"**{off_prec:.3f}** vs mean prior cell prob {off_prior:.3f} — "
           f"{'the model is extracting genuine off-modal score signal' if nat['grid_info'] > 0.02 and off_prec > off_prior else 'the model is largely coasting on the modal prior'}. "
-          f"WC-slate grid_info {wc['grid_info']:+.4f}, exact_lift {wc['exact_lift']:.2f}×.", ""]
+          f"WC-slate grid_info {wc['grid_info']:+.4f}, exact_lift {wc['exact_lift']:.2f}×. "
+          f"On the broad all-competitions lane, by contrast, grid_info is "
+          f"**{alll['grid_info']:+.4f}** (exact_lift {alll['exact_lift']:.2f}×) — "
+          f"{'the model does NOT beat the empirical prior at the exact-cell level there' if alll['grid_info'] <= 0 else 'the model modestly beats the prior there'}: "
+          "its score-level edge is concentrated on the national/WC lanes it is upweighted (W) for, "
+          "which is the intended target. So the network is not merely echoing the modal score on the "
+          "games that matter, but it adds little scoreline information on club-heavy fixtures.", ""]
 
     DIAG.mkdir(exist_ok=True)
     (DIAG / f"{name}.md").write_text("\n".join(L), encoding="utf-8")

@@ -113,3 +113,12 @@ Plan: plans/goalnet-ablation-phase-1-harness-plan.md (SESSION_MODE=autonomous, P
 - Infra fixes folded in (required to complete the runs): vectorized val_rps (hda_batch, verified identical to hda_from_P∘score_matrix to 4e-16); per-seed rate checkpointing (rates/<name>.s<k>.npz) so kills resume; --diagnose implemented (dormant until Step 6). Background jobs get idle-killed here → drove runs with continuous active monitoring; per-seed resume made it robust.
 - Files changed: experiments/ablation/registry.jsonl (2 rows), RESULTS_ABLATION.md (generated), run_ablation.py (val-speed + resume + diagnose), .gitignore (diagnostics/)
 - Timestamp: 2026-07-21
+
+## Step 6: Prior-coasting diagnostic report
+- Status: ✅ Complete
+- Summary: run_ablation.py --diagnose baseline-beta3-w15 → diagnostics/baseline-beta3-w15.md, folded into RESULTS_ABLATION.md by regen_report. Four diagnostics: (1) grid-NLL vs empirical-prior null per lane; (2) per-scoreline lift tables (eval_natl + wc_slate) — EV-pick precision vs prior cell prob + top-3-mass recall by true scoreline; (3) outcome+exact calibration reliability (eval_natl); (4) plain-language verdict.
+- ANSWER to "is the network just guessing modal scores (1-0/1-1)?": Lane-dependent, and honest. Modal prior scoreline = 1-1 (P=0.123), but the model's EV-pick is 1-0 for 241/397 national games and NEVER 1-1 — it does not echo the mode. On the NATIONAL lane it adds +0.127 nats of score-level info over the prior (grid_nll 3.068 vs 3.195), exact-lift 1.31×, off-modal EV-pick precision 0.118 vs prior 0.058 → genuine off-modal signal. WC-slate: +0.146 nats, exact-lift 1.17×. BUT on the broad all-competitions lane grid_info=-0.032 (exact-lift 0.92×) — the model does NOT beat the prior on club-heavy fixtures; its edge is concentrated on the national/WC lanes it's W-upweighted for (the intended target). Calibration: outcome ECE 0.038 (national) — reasonably calibrated; exact-cell slightly over-confident.
+- Deviations: enhanced the verdict to also report the all-lane (negative) grid_info for a complete answer, beyond the plan's national-only framing. --diagnose code itself landed in Step 5's commit (was pre-built during the training wait); this step adds the all-lane verdict lines + the generated diagnostics.
+- Validation: report contains "# Diagnostics", per-scoreline lift table, and Verdict (asserted).
+- Files changed: experiments/ablation/run_ablation.py (verdict), experiments/ablation/RESULTS_ABLATION.md (generated, +diagnostics)
+- Timestamp: 2026-07-21
