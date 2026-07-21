@@ -21,19 +21,22 @@ day-by-day WC2026 replay backtest.
 
 | # | Phase | Status | Plan file | Handoff |
 |---|---|---|---|---|
-| 1 | Harness v2 + diagnostics + re-baseline | NOT STARTED | plans/goalnet-ablation-phase-1-harness-plan.md | — |
-| 2 | Loss-level levers: β purity, time-decay, natl-weight recheck | skeleton | — | — |
+| 1 | Harness v2 + diagnostics + re-baseline | ✅ COMPLETE (2026-07-21) | plans/goalnet-ablation-phase-1-harness-plan.md | plans/goalnet-ablation-phase-1-to-2-handoff.md |
+| 2 | Loss-level levers: β purity, time-decay, natl-weight recheck | NOT STARTED (plan it first) | — | — |
 | 3 | Context features: Elo momentum; stage/rest backfill + feature | skeleton | — | — |
 | 4 | Market anchor: BetExplorer scrape → de-vigged odds feature | skeleton | — | — |
 | 5 | Architecture: cross-team attention; plus-minus ratings | skeleton | — | — |
 | 6 | WC2026 day-by-day replay backtest + model selection + production retrain | skeleton | — | — |
 
-**Current phase:** 1 (in progress). SESSION_MODE: autonomous. PHASE_MODE: pause-between-phases.
-**Last completed step:** Step 2 (commit 9354835). Step 3's `experiments/ablation/splits.py` is
-WRITTEN but NOT yet validated/committed — resume by running its validation:
-`"C:\Users\youruser\AppData\Local\Programs\Python\Python312\python.exe" experiments/ablation/splits.py --report`
-(expect counts table + `LEAKAGE CHECKS PASS`; it also builds the frozen 104-game wc_inputs.npz).
-**Next action:** validate+commit Step 3, then Steps 4→7 per the phase-1 plan.
+**Current phase:** 2 (NOT STARTED — plan it first). SESSION_MODE: autonomous. PHASE_MODE: pause-between-phases.
+**Last completed step:** Phase 1 COMPLETE (Steps 3→7 this session: commits f93d359, 6e2d7e6, e95c741,
+7db6727, 275db2e, + this Step-7 commit). Full detail in plans/goalnet-ablation-phase-1-to-2-handoff.md.
+**Next action:** write a Phase-2 plan file (β∈{0,1,3} sweep, time-decay half-life sweep, W recheck —
+all via `run_ablation.py`, diff vs baseline-beta3-w15) BEFORE executing, then run it.
+**Phase-1 result in one line:** harness reproduces production bit-for-bit (seed-7 TEST rps 0.2134);
+pooled reference registered (eval_natl grid_info +0.127, wc_slate +0.146); the model adds genuine
+off-modal score info on national/WC (EV-picks 1-0 not the modal 1-1) but sits at/below the prior on
+club-heavy fixtures (eval_all grid_info −0.032) — key motivation for the Phase-2 β sweep.
 **Session facts a fresh context needs:** bare `python` NOT on Bash PATH — always use the full
 interpreter path above; NumPy2-vs-torch warning banner at import is pre-existing and non-fatal;
 `data/players_imp.npz` = 69,053 matches ending 2026-06-14; DB has ZERO WC2026 matches (pre-WC

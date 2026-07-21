@@ -122,3 +122,19 @@ Plan: plans/goalnet-ablation-phase-1-harness-plan.md (SESSION_MODE=autonomous, P
 - Validation: report contains "# Diagnostics", per-scoreline lift table, and Verdict (asserted).
 - Files changed: experiments/ablation/run_ablation.py (verdict), experiments/ablation/RESULTS_ABLATION.md (generated, +diagnostics)
 - Timestamp: 2026-07-21
+
+## Step 7: Prepare Next Phase Handoff
+- Status: ✅ Complete
+- Summary: Wrote plans/goalnet-ablation-phase-1-to-2-handoff.md (completed steps + commits table, frozen contracts with verified split counts, baseline row values, harness-faithfulness proof, diagnostic verdict, updated Phase-2 skeleton with the β=0 hypothesis motivated by eval_all grid_info=−0.032, env/ops notes). Updated plans/goalnet-ablation-phase-state.md (phase 1→COMPLETE, current phase 2 NOT STARTED). Updated memory fm-modeling-roadmap.md with harness location + contracts + baseline verdict (context-clear-proof).
+- Validation: handoff checklist scan passed (all required sections + key tokens present); phase-state reflects phase 2.
+- Files changed: plans/goalnet-ablation-phase-1-to-2-handoff.md (new), plans/goalnet-ablation-phase-state.md, memory/fm-modeling-roadmap.md (memory, not committed to repo)
+- Timestamp: 2026-07-21
+
+---
+
+## Phase 1 Final Summary
+- Steps completed this session: 3, 4, 4-fix, 5, 6, 7 (Steps 1-2 were prior).
+- Commits: f93d359 (splits), 6e2d7e6 (runner), e95c741 (memory fix), 7db6727 (baselines), 275db2e (diagnostics), + Step-7 docs.
+- Key result: reproducible one-command ablation harness, PROVEN bit-for-bit faithful to production (seed-7 match). Two baseline rows registered. Prior-coasting question answered: model adds genuine off-modal score info on national/WC (EV-picks 1-0 not modal 1-1), coasts on prior for club games.
+- Deviations of note: fixed 3 lazy-NpzFile perf bugs + 1 memory-churn crash; ran two baselines (canonical anchor + pooled ref) per DESIGN; honored frozen lane names (eval_all) over the plan's pre-freeze test_all; added per-seed resume + val vectorization to survive idle-kills and multi-hour CPU runs.
+- Status: COMPLETE. STOP at phase boundary (PHASE_MODE=pause-between-phases).
