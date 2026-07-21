@@ -160,3 +160,12 @@ Plan: plans/goalnet-ablation-phase-2-loss-levers-plan.md (autonomous, pause-betw
 - Validation: registry assertion passed (beta0/beta1 rows, config.beta ∈ {0,1}, grid_nll present); Δ table printed.
 - Files: experiments/ablation/registry.jsonl (+2 rows), RESULTS_ABLATION.md (regenerated)
 - Timestamp: 2026-07-21
+
+## Steps 2+3: Time-decay sweep + National-W recheck (ran detached via scheduled task)
+- Status: ✅ Complete (ran as detached Windows scheduled task FM_Phase2_Ablation — session bg jobs get idle-killed; script experiments/ablation/run_phase2_remaining.ps1, resumable via per-seed caches).
+- Step 2 decay (β=3/W=15): decay-hl2 natl grid_info Δ+0.066 (wc pg +0.010 = best pg of the phase), decay-hl4 Δ+0.045, decay-hl8 Δ+0.080. ALL pass the gate (fix eval_all coasting too) but NON-MONOTONIC across hl (hl4 dips below hl2 & hl8) → exact half-life is noise-level; decay is a real but modest lever. hl2 best for reference points.
+- Step 3 W recheck (β=3): beta3-w1 (NO upweight) natl grid_info Δ+0.086 / all Δ+0.037 — PASSES and BEATS W=15; beta3-w40 (heavy upweight) FAILS (wc pg Δ−0.058 < −0.05, natl gain smaller). Direction: LESS upweight = better calibration. The W=15 national upweight is a POINTS-BIAS (same story as β) that hurts the calibrated-distribution objective; removing it (W=1) helps both lanes.
+- Combined finding: β and W are both points-oriented biases; the calibrated core wants β=0 AND W=1. → Step 4 combo tests whether the two de-biasing levers stack.
+- Validation: registry has 9 rows; gate applied to all 6 experimental levers (5 pass, W=40 fails); log ALL DONE 2026-07-21T22:00.
+- Files: experiments/ablation/registry.jsonl (+5 rows), RESULTS_ABLATION.md (regenerated), run_phase2_remaining.ps1 (detached-run tooling)
+- Timestamp: 2026-07-21
