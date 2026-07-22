@@ -18,7 +18,7 @@ import torch.nn as nn
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent / "src"))
 import train_goals as tg  # noqa: E402
 
-ARCHS = ["goalnet", "cross22"]
+ARCHS = ["goalnet", "cross22", "latecross"]
 
 
 class Cross22GoalNet(nn.Module):
@@ -63,9 +63,54 @@ class Cross22GoalNet(nn.Module):
         return logh, loga
 
 
+class LateCrossGoalNet(nn.Module):
+    """Fallback Arm-X variant: keep GoalNet's per-team encoding philosophy (11-token self
+    transformer per XI), then ONE late cross-attention block where each team's tokens attend to
+    the opponent's (residual), before role-pooling and the same team/ad/ctx/rate heads."""
+
+    def __init__(self, A, nctx, d=64, h=128, p=0.3):
+        super().__init__()
+        self.player = nn.Sequential(nn.Linear(A, 128), nn.ReLU(), nn.LayerNorm(128),
+                                    nn.Dropout(p), nn.Linear(128, d))
+        self.role = nn.Embedding(4, d)
+        layer = nn.TransformerEncoderLayer(d, nhead=4, dim_feedforward=2 * d,
+                                           dropout=p, batch_first=True)
+        self.enc = nn.TransformerEncoder(layer, num_layers=2)
+        self.xattn = nn.MultiheadAttention(d, 4, dropout=p, batch_first=True)
+        self.xnorm = nn.LayerNorm(d)
+        self.team = nn.Sequential(nn.Linear(4 * d, h), nn.ReLU(), nn.LayerNorm(h),
+                                  nn.Dropout(p), nn.Linear(h, h))
+        self.ad = nn.Sequential(nn.Linear(h, h), nn.ReLU(), nn.Dropout(p), nn.Linear(h, 2))
+        self.ctx = nn.Sequential(nn.Linear(nctx, 32), nn.ReLU(), nn.Linear(32, 2))
+        self.home_adv = nn.Parameter(torch.tensor(0.25))
+
+    def _pool(self, pe, R):
+        pools = []
+        for r in range(4):
+            mf = (R == r).unsqueeze(-1).float()
+            pools.append((pe * mf).sum(1) / mf.sum(1).clamp(min=1))
+        return torch.cat(pools, -1)
+
+    def _side(self, own, opp, Rown):
+        x = self.xnorm(own + self.xattn(own, opp, opp, need_weights=False)[0])
+        return self.team(self._pool(x, Rown))
+
+    def forward(self, Xh, Rh, Xa, Ra, C):
+        ph = self.enc(self.player(Xh) + self.role(Rh))
+        pa = self.enc(self.player(Xa) + self.role(Ra))
+        th = self._side(ph, pa, Rh); ta = self._side(pa, ph, Ra)
+        adh, ada = self.ad(th), self.ad(ta)
+        ch, ca = self.ctx(C).unbind(-1)
+        logh = self.home_adv + adh[:, 0] - ada[:, 1] + ch
+        loga = ada[:, 0] - adh[:, 1] + ca
+        return logh, loga
+
+
 def build_model(arch, A, nctx):
     if arch == "goalnet":
         return tg.GoalNet(A, nctx)
     if arch == "cross22":
         return Cross22GoalNet(A, nctx)
+    if arch == "latecross":
+        return LateCrossGoalNet(A, nctx)
     raise ValueError(f"unknown arch '{arch}' (known: {ARCHS})")
