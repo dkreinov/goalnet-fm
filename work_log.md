@@ -329,3 +329,21 @@ Plan: plans/goalnet-ablation-phase-4-market-anchor-plan.md (SESSION_MODE=autonom
 - Headline: market signal ADOPTED (+0.024 nats covered natl, acc +5pp; feature ≡ blend, no stacking; anchor + stage rejected). First new info source to pass since the harness was built.
 - User contributions mid-phase: authorized ?stage= pagination (unlocked full coverage + qualifiers); caught the club-odds omission (601→38k odds examples).
 - Status: COMPLETE. STOP at phase boundary (pause-between-phases).
+
+# Phase 5 — Architecture (cross-team attention + plus-minus)
+
+Plan: plans/goalnet-ablation-phase-5-architecture-plan.md (commit f7a1ed6). SESSION_MODE: autonomous. PHASE_MODE: pause-between-phases.
+
+## Step 1: arch flag + models.py + parity tripwire
+- Status: DONE Complete (commit 01514c7)
+- experiments/ablation/models.py: build_model(arch) factory + Cross22GoalNet (22-token joint transformer, team embedding, role-masked-mean pooling, same ad/ctx/rate heads; 150,757 params vs GoalNet 150,629). run_ablation.py: --arch flag (choices from models.ARCHS), threaded to train_one, recorded in config.flags only when != goalnet (old rows stay comparable). wc lane unchanged for arch runs (input contract preserved).
+- Validation: in-process parity tripwire (seeds 0,7): state_dict bit-identical, forward bit-identical, one AdamW train-step loss bit-identical vs inline tg.GoalNet; cross22 deterministic under reseed, finite outputs; --report regenerates (19 runs) clean.
+- Timestamp: 2026-07-22
+
+## Step 4: plus-minus builder + aligned npz (done early, parallel to Step 2 training)
+- Status: DONE Complete
+- src/build_plusminus.py: chronological pass over 90,279 DB matches; on-pitch intervals from match_sub (85k matches), segment goal attribution where events reconstruct the final exactly (51,264 matches; own-goal team_side = benefiting side, 51,273 vs 47,501 reconstruction wins), minutes-weighted fallback otherwise (34,107). Rating = shrunk (K=20 90s) net-of-club on-pitch GD/90, emitted strictly BEFORE accumulator update (leakage-free by construction).
+- Outputs: data/players_pm.npz (PMh/PMa (69053,11,2) [pm_shrunk,has_pm]) + data/ctx_pm.npz ([pm_team_diff,pm_cov]). Slot alignment: role-sequence assert vs Rh/Ra passed for 69,052/69,053 (1 align-fail -> safe zero row); slot coverage 98.9%.
+- Finding: pm_diff is INVERSELY related to home win on late matches (corr -0.10; top-quintile home-win 0.380 vs bottom 0.512) - a rotation/transfer proxy (low-minute players inflate GD in blowouts; big-club signings carry weak-club histories vs high club baseline). Fine for a learned feature; ablation will judge incremental value over Elo ctx.
+- Bugs fixed during build: sub players absent from match_player (KeyError), None-tie tuple sort.
+- Timestamp: 2026-07-22
