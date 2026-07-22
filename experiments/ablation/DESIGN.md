@@ -207,3 +207,28 @@ lacks senior friendlies + 2026-cycle qualifiers; WC-slate odds unavailable → w
 odds runs). Next sources: oddsportal (free) then The Odds API (paid, 2022→) to fill eval-window
 qualifiers/friendlies + the WC slate. Odds inventory: `data/ctx_odds.npz` = 38,403 matches
 (37,665 club from DB football-data columns + 738 scraped national).
+
+## Phase-5 adopted architecture (2026-07-22): NONE - null result, per-team GoalNet stands
+
+All four Phase-5 arms scored BELOW the combo-beta0-w1 baseline on the primary gate
+(eval_natl grid_info; baseline +0.2432, s5-vs-s10 noise band ~0.002):
+
+| run | eval_natl grid_info (D) | eval_all (D) | wc_slate (D) | verdict |
+|---|---|---|---|---|
+| arch-cross22-s3 (joint 22-token transformer) | +0.2257 (-0.0175) | +0.0719 (-0.0043) | +0.2939 (-0.0053) | REJECT |
+| arch-latecross-s3 (per-team enc + 1 late cross-attn block) | +0.2261 (-0.0171) | +0.0719 (-0.0043) | +0.2970 (-0.0022) | REJECT |
+| ctx-pm-s3 (team-aggregate plus-minus ctx) | +0.2248 (-0.0184) | +0.0757 (-0.0005) | skipped | REJECT |
+| pm-channel-s3 (per-slot [pm,has_pm], A 62->64) | +0.2313 (-0.0119) | +0.0739 (-0.0023) | skipped | REJECT |
+
+Conclusions frozen for Phase 6:
+- Cross-team attention DILUTES the per-team representation at this data/model scale (both early
+  and late fusion). The independent per-XI encoder + additive att/def rate equation stands.
+- Plus-minus (shrunk net-of-club on-pitch GD/90, leakage-free; data/players_pm.npz 98.9% slot
+  coverage) behaves as a rotation/transfer proxy (corr -0.10 with home win, INVERSE) and adds no
+  score-level information beyond the Elo-loaded base ctx - neither as team aggregate nor as
+  per-player channels. Same conclusion family as Phase-3: re-derived signal is at ceiling; only
+  genuinely NEW information (market odds; richer event/xG-style data) moves the needle.
+- Infrastructure ADOPTED (stays): --arch flag + models.py zoo (goalnet parity bit-for-bit
+  verified), --pm-channel loader, src/build_plusminus.py.
+- The odds-informed bar (+0.1803 covered natl) was never threatened; production-path
+  recommendation for Phase 6 remains ctx-odds feature + lambda~0.5 blend on the standard GoalNet.

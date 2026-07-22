@@ -25,17 +25,22 @@ day-by-day WC2026 replay backtest.
 | 2 | Loss-level levers: β purity, time-decay, natl-weight recheck | ✅ COMPLETE (2026-07-22) | plans/goalnet-ablation-phase-2-loss-levers-plan.md | plans/goalnet-ablation-phase-2-to-3-handoff.md |
 | 3 | Context features: Elo momentum; stage/rest backfill + feature | ✅ COMPLETE (2026-07-22, null) | plans/goalnet-ablation-phase-3-context-features-plan.md | plans/goalnet-ablation-phase-3-to-4-handoff.md |
 | 4 | Market anchor: BetExplorer scrape → de-vigged odds feature | ✅ COMPLETE (2026-07-22, ADOPTED) | plans/goalnet-ablation-phase-4-market-anchor-plan.md | plans/goalnet-ablation-phase-4-to-5-handoff.md |
-| 5 | Architecture: cross-team attention; plus-minus ratings | PLANNED (2026-07-22, awaiting execution-mode choice) | plans/goalnet-ablation-phase-5-architecture-plan.md | — |
+| 5 | Architecture: cross-team attention; plus-minus ratings | ✅ COMPLETE (2026-07-22, NULL) | plans/goalnet-ablation-phase-5-architecture-plan.md | plans/goalnet-ablation-phase-5-to-6-handoff.md |
 | 6 | WC2026 day-by-day replay backtest + model selection + production retrain | skeleton | — | — |
 
-**Current phase:** 5 (PLANNED — see plans/goalnet-ablation-phase-5-architecture-plan.md; execute after mode choice). SESSION_MODE: autonomous (chosen 2026-07-22). PHASE_MODE: pause-between-phases.
-**Last completed step:** Phase 1 COMPLETE (Steps 3→7 this session: commits f93d359, 6e2d7e6, e95c741,
-7db6727, 275db2e, + this Step-7 commit). Full detail in plans/goalnet-ablation-phase-1-to-2-handoff.md.
-**Next action:** PLAN Phase 5 (architecture: cross-team attention variant + plus-minus player
-ratings) as its own plan file, then execute. Experiment default stays `combo-beta0-w1`; BUT winners
-must also beat the ODDS-INFORMED bar (+0.1803 covered natl = feature+λ0.5 blend) — see
-phase-4-to-5 handoff. Multi-source odds TODO open (oddsportal free → The Odds API paid) to lift natl
-eval coverage 35%→70%+ and enable WC-slate odds.
+**Current phase:** 6 (NOT STARTED — plan it first; WC2026 replay + selection + production retrain).
+PHASE_MODE: pause-between-phases.
+**Last completed step:** Phase 5 COMPLETE (NULL) 2026-07-22 — see
+plans/goalnet-ablation-phase-5-to-6-handoff.md. Registry 23 rows.
+**Next action:** PLAN Phase 6. Candidate set is small: combo-beta0-w1 core ± market layer
+(feature / λ-blend / both). Decide early whether multi-source odds collection (oddsportal free →
+The Odds API paid) runs first — there are NO WC2026 odds yet, so the replay's market layer needs it.
+Production retrain lifts the train_goals/goalnet.pt no-edit rule ONLY in its retrain step.
+**Phase-5 result (NULL):** all 4 arms below baseline on eval_natl grid_info (cross22 −0.018,
+latecross −0.017, ctx-pm −0.018, pm-channel −0.012): cross-team attention dilutes at this scale;
+plus-minus is a rotation proxy (inverse corr −0.10) with no incremental signal. Per-team GoalNet
+β0/W1 stands; only NEW info (odds) moves the needle. Kept infra: --arch/models.py (parity
+verified), --pm-channel, build_plusminus.py, players_pm/ctx_pm npz.
 **Phase-4 result (ADOPTED):** market signal is real (+0.024 nats covered natl; acc +5pp) — captured
 equivalently by ctx-odds feature or post-hoc λ0.9 blend (no stacking); KL training-anchor neutral;
 thin stage flag rejected. ctx_odds.npz = 38,403 matches (club DB + scraped natl).

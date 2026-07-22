@@ -347,3 +347,32 @@ Plan: plans/goalnet-ablation-phase-5-architecture-plan.md (commit f7a1ed6). SESS
 - Finding: pm_diff is INVERSELY related to home win on late matches (corr -0.10; top-quintile home-win 0.380 vs bottom 0.512) - a rotation/transfer proxy (low-minute players inflate GD in blowouts; big-club signings carry weak-club histories vs high club baseline). Fine for a learned feature; ablation will judge incremental value over Elo ctx.
 - Bugs fixed during build: sub players absent from match_player (KeyError), None-tie tuple sort.
 - Timestamp: 2026-07-22
+
+## Step 2: Arm X exploratory - arch-cross22-s3
+- Status: DONE Complete (run finished 16:02, 25.2 min; commit 216b4f8 with Step 3 variant)
+- Verdict: BELOW baseline. eval_natl grid_info +0.2257 vs combo-beta0-w1 +0.2432 (-0.017, outside the ~0.002 s5-vs-s10 noise band); eval_all +0.0719 vs +0.0762; wc_slate +0.2939 vs +0.2992 (~flat). exact_lift natl 1.56 vs 1.33 (more off-modal mass) but grid-info gate fails. Joint 22-token attention DILUTES the per-team representation at this scale.
+
+## Step 3: Arm X decision gate
+- Status: IN PROGRESS - cross22 clearly below -> per plan, ONE fallback exploratory variant then Arm X stops. LateCrossGoalNet added to models.py (per-team 2-layer self transformer kept, single late cross-attention block w/ residual+LN before role-pool; 167,397 params; deterministic-build smoke passed). Run arch-latecross-s3 chained after ctx-pm-s3 in FM_Phase5B (run_phase5b.ps1).
+- Timestamp: 2026-07-22
+
+## Step 3 (closed) + Step 5: Arm X rejected; ctx-pm null
+- Status: DONE Complete (runs finished 17:38; commits 216b4f8, + Step5/6 commit)
+- arch-latecross-s3: eval_natl +0.2261 / eval_all +0.0719 / wc +0.2970 - below combo-beta0-w1 everywhere. ARM X CLOSED: both cross-attention variants (cross22, latecross) below baseline; per-team encoding stands.
+- ctx-pm-s3 (Arm P1): eval_natl +0.2248 (-0.018), eval_all +0.0757 (flat). Team-aggregate plus-minus adds nothing over Elo-loaded base ctx - same pattern as Phase-3 momentum null.
+
+## Step 6: Arm P2 pm-channel-s3 launched
+- --pm-channel loader in run_ablation (asserts mids identical, appends per-slot [pm,has_pm] to X pre-standardization, A 62->64, wc lane off, flag recorded). FM_Phase5C detached task running.
+- Timestamp: 2026-07-22
+
+## Step 6 verdict + Steps 7-9: Phase 5 close-out
+- Status: DONE Complete
+- pm-channel-s3: eval_natl +0.2313 (-0.012), eval_all +0.0739 (-0.002) - best Phase-5 arm, still below. ALL FOUR ARMS REJECTED -> Phase 5 NULL. Step 7 (confirmation + odds-bar) correctly skipped: nothing passed the s3 gate.
+- Step 8: DESIGN.md "Phase-5 adopted architecture" (NONE - null table + frozen conclusions); RESULTS_ABLATION.md regenerated (23 runs); FM_Phase5/5B/5C scheduled tasks deleted (0 remain).
+- Step 9: plans/goalnet-ablation-phase-5-to-6-handoff.md written; phase-state -> phase 5 COMPLETE (NULL), current 6; memory fm-modeling-roadmap Phase-5 paragraph appended.
+
+## Phase 5 Final Summary
+- Steps 1-9 complete (7 skipped by design). Commits: f7a1ed6 (plan), 01514c7, 5563131, 216b4f8, Step5/6 commit, + this close-out commit.
+- Headline: NULL - architecture is not the bottleneck; per-team GoalNet beta0/W1 stands; only new information (market odds) moves the needle. Odds-informed bar (+0.1803) never threatened.
+- Wall time: 4 runs x ~25 min s3 (cheap-first seeds saved ~2h vs s5 everywhere).
+- Status: COMPLETE. STOP at phase boundary (pause-between-phases).

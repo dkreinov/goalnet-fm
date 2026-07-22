@@ -171,6 +171,40 @@ _Arm S: knockout/stage flag (collect-then-test debt)_
 | eval_all | 21663 | 0.0776 (+0.1093) | 2.9125 (-0.1093) | 0.2090 (-0.0012) | 0.496 (-0.000) | 0.0127 (-0.0057) | 0.97 (+0.049) | 0.715 (-0.003) |
 | eval_natl | 397 | 0.2341 (+0.1073) | 2.9609 (-0.1073) | 0.1802 (-0.0015) | 0.582 (+0.005) | 0.0391 (+0.0012) | 1.22 (-0.083) | 0.773 (-0.043) |
 
+## arch-cross22-s3  ·  pooled · β=0.0 W=1.0 seeds=3 ep=150 · 25.17min · `5563131e` ⚠dirty
+_Phase 5 Arm X exploratory: 22-token joint transformer (cross-team attention), s3, vs combo-beta0-w1_
+
+| lane | n | grid_info | grid_nll | rps | acc | ece_outcome | exact_lift | pts_g_31 |
+|---|---|---|---|---|---|---|---|---|
+| eval_all | 21663 | 0.0719 (+0.1036) | 2.9182 (-0.1036) | 0.2090 (-0.0013) | 0.497 (+0.000) | 0.0196 (+0.0012) | 0.98 (+0.060) | 0.699 (-0.018) |
+| eval_natl | 397 | 0.2257 (+0.0989) | 2.9694 (-0.0989) | 0.1822 (+0.0005) | 0.569 (-0.008) | 0.0591 (+0.0211) | 1.56 (+0.250) | 0.839 (+0.023) |
+| wc_slate | 104 | 0.2939 | 2.9041 | 0.1562 | 0.673 | 0.1185 | 1.08 | 0.894 |
+
+## ctx-pm-s3  ·  pooled · β=0.0 W=1.0 seeds=3 ep=150 · 27.93min · `216b4f87` ⚠dirty
+_Phase 5 Arm P1 cheap: team-aggregate shrunk net-of-club plus-minus diff + coverage as ctx, s3_
+
+| lane | n | grid_info | grid_nll | rps | acc | ece_outcome | exact_lift | pts_g_31 |
+|---|---|---|---|---|---|---|---|---|
+| eval_all | 21663 | 0.0757 (+0.1073) | 2.9144 (-0.1073) | 0.2088 (-0.0014) | 0.497 (+0.001) | 0.0171 (-0.0013) | 0.98 (+0.052) | 0.715 (-0.002) |
+| eval_natl | 397 | 0.2248 (+0.0980) | 2.9703 (-0.0980) | 0.1817 (-0.0001) | 0.569 (-0.008) | 0.0513 (+0.0134) | 1.19 (-0.111) | 0.768 (-0.048) |
+
+## arch-latecross-s3  ·  pooled · β=0.0 W=1.0 seeds=3 ep=150 · 25.64min · `216b4f87` ⚠dirty
+_Phase 5 Arm X fallback: per-team encoder + one late cross-attention block, s3 (cross22-s3 was below baseline)_
+
+| lane | n | grid_info | grid_nll | rps | acc | ece_outcome | exact_lift | pts_g_31 |
+|---|---|---|---|---|---|---|---|---|
+| eval_all | 21663 | 0.0719 (+0.1036) | 2.9182 (-0.1036) | 0.2090 (-0.0012) | 0.496 (-0.000) | 0.0203 (+0.0019) | 0.97 (+0.048) | 0.715 (-0.003) |
+| eval_natl | 397 | 0.2261 (+0.0993) | 2.9690 (-0.0993) | 0.1821 (+0.0004) | 0.562 (-0.015) | 0.0696 (+0.0316) | 1.14 (-0.167) | 0.758 (-0.058) |
+| wc_slate | 104 | 0.2970 | 2.9010 | 0.1539 | 0.673 | 0.1101 | 1.08 | 0.904 |
+
+## pm-channel-s3  ·  pooled · β=0.0 W=1.0 seeds=3 ep=150 · 23.55min · `dc36bc4a` ⚠dirty
+_Phase 5 Arm P2: per-slot shrunk net-of-club plus-minus [pm,has_pm] appended to X (A 62->64), goalnet, s3_
+
+| lane | n | grid_info | grid_nll | rps | acc | ece_outcome | exact_lift | pts_g_31 |
+|---|---|---|---|---|---|---|---|---|
+| eval_all | 21663 | 0.0739 (+0.1056) | 2.9161 (-0.1056) | 0.2090 (-0.0012) | 0.496 (-0.000) | 0.0186 (+0.0002) | 0.94 (+0.017) | 0.707 (-0.011) |
+| eval_natl | 397 | 0.2313 (+0.1045) | 2.9637 (-0.1045) | 0.1808 (-0.0009) | 0.579 (+0.003) | 0.0565 (+0.0186) | 1.11 (-0.194) | 0.753 (-0.063) |
+
 ---
 
 # Diagnostics
