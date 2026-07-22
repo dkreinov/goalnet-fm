@@ -140,3 +140,24 @@ Rationale (registry evidence, pooled eval_natl grid_info vs baseline +0.1268):
 The historical production `goalnet.pt` (β=3, W=15, --natl-finetune) is NOT retrained here — production
 retrain is a Phase-6 decision. `src/train_goals.py` is unchanged; the adopted config lives as the
 harness default for experiments.
+
+## Phase-3 adopted context (frozen 2026-07-22)
+
+**Adopted context = NONE NEW.** The base 10-feature `context.npz` (Elo level, form level, goal-diff
+level, rest-days) stands; no `--ctx-extra` bundle joins the default. Phase-3 experiment config is
+unchanged from Phase 2: `--beta 0 --w 1`.
+
+Evidence:
+- **Elo-momentum / form-trajectory (`ctx_momentum.npz`, REJECTED):** vs `combo-beta0-w1`, eval_natl
+  grid_info −0.0044 (gate needs ≥+0.02), eval_all −0.0028, rps flat. Trajectory/direction adds no
+  independent score-level signal once the base context supplies Elo/form LEVEL and Phase-2's β0+W1
+  already subsumes recency. Elo-delta correlates with level; form-trend with mean-form. Informative
+  null at 69k matches / 397 national eval, as the Phase-2→3 handoff predicted.
+- **Stage/knockout (NOT BUILT):** no stage/round column exists for the 69k training matches
+  (`match_kind` ∈ {league, national} only); stage data lives only in the WC benchmark. Not
+  backfillable → skipped. Rest-days is already in the base context.
+
+Takeaway: re-derived context features (level/recency/trajectory) are at their ceiling for this model
++ data scale. The next lever must bring **genuinely new information** — Phase 4 (de-vigged bookmaker
+odds anchor), which the literature (see memory) flags as the strongest untried signal.
+`src/build_momentum.py` is kept (leakage-free trajectory builder) in case a larger dataset revisits it.

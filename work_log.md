@@ -221,3 +221,14 @@ Plan: plans/goalnet-ablation-phase-3-context-features-plan.md (autonomous, pause
 - Phase-3 adopted context = NONE NEW (base 10-feat context stands). Next real lever = Phase 4 market anchor (brings genuinely NEW information, not re-derived features).
 - Files: experiments/ablation/registry.jsonl (+ctx-momentum row), RESULTS_ABLATION.md, work_log.md
 - Timestamp: 2026-07-22
+
+## Step 6: Phase 3→4 handoff
+- Status: ✅ Complete
+- DESIGN.md "## Phase-3 adopted context" section = NONE NEW (base context stands; momentum rejected, stage not backfillable). Wrote plans/goalnet-ablation-phase-3-to-4-handoff.md (null verdict, runs table, harness wc-skip change, Phase-4 market-anchor guidance with BetExplorer/martj42 data sources). Updated phase-state (phase 3→COMPLETE null, current 4) + memory.
+- Timestamp: 2026-07-22
+
+## Phase 3 Final Summary
+- Steps: 0 (audit), 1 (backfill investigation), 2 (build momentum), 3 (ablate=null), 4 (stage=skipped/not-backfillable), 5 (n/a), 6 (handoff).
+- Commits: 700c5f1 (plan), 5951a8f (momentum builder), 95e3822 (wc-skip fix), 2bc99a3 (null result), + Step-6 docs.
+- Verdict: NULL — re-derived context features at their ceiling; base context + β0+W1 stand. Next lever = Phase 4 market anchor (new information).
+- Status: COMPLETE. STOP at phase boundary.
