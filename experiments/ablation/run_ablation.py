@@ -89,9 +89,16 @@ def _load_extra(name):
     return {int(m): arr[i] for i, m in enumerate(mids)}, arr.shape[1]
 
 
-def load_data(npz, split, decay_halflife=None, ctx_extra=()):
+def load_data(npz, split, decay_halflife=None, ctx_extra=(), pm_channel=None):
     """Masks + train-standardised tensors + lane truth. Standardisation stats come from TRAIN only."""
     d = splits.load_dataset(npz)
+    if pm_channel:                                           # Phase-5 Arm P2: per-slot channels
+        zp = np.load(ROOT / "data" / pm_channel)
+        pmids, PMh, PMa = np.asarray(zp["mids"]), np.asarray(zp["PMh"]), np.asarray(zp["PMa"])
+        assert np.array_equal(pmids, d["mids"]), f"{pm_channel} mids != {npz} mids (rebuild it)"
+        d["Xh"] = np.concatenate([d["Xh"], PMh], -1).astype(np.float32)
+        d["Xa"] = np.concatenate([d["Xa"], PMa], -1).astype(np.float32)
+        print(f"  --pm-channel {pm_channel}: A {d['Xh'].shape[-1]-PMh.shape[-1]} -> {d['Xh'].shape[-1]}", flush=True)
     A = d["Xh"].shape[-1]
     CTX = d["CTX"]
     for name in ctx_extra:                                   # Phase-3 hook (inert unless --ctx-extra given)
@@ -245,7 +252,7 @@ def run(args):
             if line.strip() and json.loads(line)["name"] == args.name:
                 sys.exit(f"refusing: name '{args.name}' already in registry (use --force-rerun to add a rerun row)")
     t0 = time.time()
-    D = load_data(args.npz, args.split, args.decay_halflife, args.ctx_extra)
+    D = load_data(args.npz, args.split, args.decay_halflife, args.ctx_extra, args.pm_channel)
     if args.market_anchor:
         oz = np.load(ROOT / "data" / "ctx_odds.npz")
         _of, _om = oz["feats"], oz["mids"]               # materialize once (NpzFile is lazy)
@@ -260,7 +267,7 @@ def run(args):
     # WC slate (raw frozen inputs) -> standardise with this run's train stats. The frozen wc_inputs.npz
     # carries only the 10-dim BASE context; --ctx-extra feature bundles aren't available for the WC teams,
     # so the WC-slate lane is skipped for ctx-extra runs (same reason train_goals skips WC for --value/--venue).
-    wc_ok = not args.ctx_extra
+    wc_ok = not args.ctx_extra and not args.pm_channel
     if wc_ok:
         w = splits.build_wc_inputs()
         wXhn = ((w["Xh"] - D["mu"]) / D["sd"]).astype(np.float32); wXan = ((w["Xa"] - D["mu"]) / D["sd"]).astype(np.float32)
@@ -337,7 +344,8 @@ def run(args):
                    "seeds": args.seeds, "epochs": args.epochs, "rho_policy": f"val-tuned:{best_rho}",
                    "ctx_extra": list(args.ctx_extra), "decay_halflife": args.decay_halflife,
                    "flags": ({**({"market_anchor": args.market_anchor} if args.market_anchor else {}),
-                              **({"arch": args.arch} if args.arch != "goalnet" else {})}),
+                              **({"arch": args.arch} if args.arch != "goalnet" else {}),
+                              **({"pm_channel": args.pm_channel} if args.pm_channel else {})}),
                    "notes": args.notes},
         "data": {"npz_mtime": npz_mtime, "n": int(len(D["y"])), "ctx_dim": int(D["nctx"]),
                  "seed_earlystop_rps": [round(r, 4) for r in seed_rps]},
@@ -526,6 +534,8 @@ def main():
                     help="B2: weight of KL(de-vigged odds || model outcome probs) on covered train matches")
     ap.add_argument("--ctx-extra", nargs="*", default=[])
     ap.add_argument("--arch", default="goalnet", choices=models.ARCHS)
+    ap.add_argument("--pm-channel", default=None,
+                    help="per-slot plus-minus npz (players_pm.npz) appended as X channels; skips WC lane")
     ap.add_argument("--notes", default="")
     ap.add_argument("--force-rerun", action="store_true")
     ap.add_argument("--diagnose")
