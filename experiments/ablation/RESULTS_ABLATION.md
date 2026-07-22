@@ -131,6 +131,12 @@ _Elo-momentum + form-trajectory bundle vs beta0-W1_
 | eval_all | 21663 | 0.0734 (+0.1051) | 2.9167 (-0.1051) | 0.2090 (-0.0012) | 0.496 (-0.000) | 0.0181 (-0.0003) | 1.00 (+0.073) | 0.704 (-0.014) |
 | eval_natl | 397 | 0.2388 (+0.1120) | 2.9563 (-0.1120) | 0.1809 (-0.0008) | 0.579 (+0.003) | 0.0414 (+0.0035) | 1.39 (+0.083) | 0.793 (-0.023) |
 
+## market-blend-b1  ·  pooled · β=0.0 W=1.0 seeds=0 ep=0 · 0.17min · `ad349090` ⚠dirty
+_Arm B1: inference blend of combo-beta0-w1 grids toward de-vigged market_
+
+| lane | n | grid_info | grid_nll | rps | acc | ece_outcome | exact_lift | pts_g_31 |
+|---|---|---|---|---|---|---|---|---|
+
 ---
 
 # Diagnostics

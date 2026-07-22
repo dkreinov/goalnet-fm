@@ -232,3 +232,67 @@ Plan: plans/goalnet-ablation-phase-3-context-features-plan.md (autonomous, pause
 - Commits: 700c5f1 (plan), 5951a8f (momentum builder), 95e3822 (wc-skip fix), 2bc99a3 (null result), + Step-6 docs.
 - Verdict: NULL — re-derived context features at their ceiling; base context + β0+W1 stand. Next lever = Phase 4 market anchor (new information).
 - Status: COMPLETE. STOP at phase boundary.
+
+---
+# Work Log — GoalNet ablation program, Phase 4 (market anchor)
+Plan: plans/goalnet-ablation-phase-4-market-anchor-plan.md (SESSION_MODE=autonomous, PHASE_MODE=pause-between-phases)
+
+## Step 1: Recon — BetExplorer structure & URL patterns
+- Status: ✅ Complete
+- PREMISE VERIFIED: BetExplorer serves 1X2 closing odds + score + date + stage in STATIC HTML (no JS/auth needed), via fetch.py. Row structure (bs4): team link text "Home-Away" (concatenated — hyphenated-country risk e.g. Bosnia-Herzegovina → must read home/away from separate elements, resolve in Step 2), score cell "4:3AfP" (AfP/ET suffix = knockout marker), 5 data-odd attrs (first 3 = 1/X/2), date "DD.MM.YYYY".
+- CRITICAL FINDING — SOFT-404 TRAP: wrong/nonexistent slugs return a plausible 640k-byte page (846 data-odd) with generic <title> "Football Stats, Results, Tables & H2H stats | BetExplorer" and NO team rows, HTTP 200. Naive slug-guessing would silently scrape this fallback repeatedly → garbage odds. ROBUST DETECTOR: real competition pages have a specific <title> ("World Cup Results", "Euro Results", "UEFA Nations League Results", "Copa América Results", "Friendly International Results") + real team rows + len<600k. Step-2 scraper MUST title-detect and skip traps.
+- robots.txt: path slugs /football/{region}/{comp}-{season}/results/ are ALLOWED; query-param variants (?year= ?stage= ?page= ?month= ...) are Disallowed → use path slugs only (aligns with our approach; means no ?stage= pagination — base page shows whatever stage subset, handle in join).
+- ENUMERATION SOURCE: sitemap_index.xml → sitemap/football/results*.xml (results.xml + results/other{,2,3}.xml) lists canonical competition-season URLs. Step-2 scraper crawls these + filters to our comps, avoiding all slug-guessing.
+- CONFIRMED REAL SLUGS (comp_id → stem): 9→world/world-cup(2022); 10→europe/euro(2020,2024); 11→europe/uefa-nations-league(2020-2021,2022-2023,2024-2025); 12→south-america/copa-america(2021,2024); 15→world/friendly-international(2021-2025). Qualifiers 13(WCQ-UEFA)/14(WCQ-CONMEBOL) NOT in sitemap file 1 (truncated at 10k URLs) — in results/other2.xml; scraper crawls all files to get them.
+- COVERAGE STAKES (training natl matches by comp): Friendly 507, NationsL 345, WCQ-UEFA 254, Euro 101, WC 60, Copa 52, WCQ-CONMEBOL 50 = 1369 total. WC-qualifiers = 22% → must include; sitemap crawl covers them.
+- Deviations: recon ran longer than a typical read-only step (~50 fetches) because slug-guessing hit the soft-404 trap repeatedly; resolved cleanly via robots.txt→sitemap. No blocker; no 403/anti-bot encountered.
+- Files changed: none (read-only; fetched pages cached in data/cache/)
+- Git commit: skipped — read-only
+- Timestamp: 2026-07-22
+
+## Step 2: Scraper — src/scrape_betexplorer.py
+- Status: ⚠️ Blocked on coverage (working scraper, but polite scraping caps at ~19%)
+- Built src/scrape_betexplorer.py: sitemap-based page enumeration (robots-compliant, dodges soft-404 trap via <title> check) + robust row parser (home=<strong>, away=last <span> — solves hyphenated-country split; 3 [data-odd] = 1/X/2; knockout flag from AfP/ET/pen score suffix). Ran full: 255 rows across comps 9/10/11/12/15.
+- BLOCKER: BetExplorer results pages show only the FINAL/latest stage per competition (Euro-2024 HTML has 15 in-match rows = knockout only; WC-2022 = 16; NL-2024/25 = 12). Full history sits behind ?stage=/?page=/?year= query params which robots.txt EXPLICITLY Disallows. Verified it's not a parser bug (page HTML genuinely contains only those rows). Sitemap also incomplete (missing copa-2024 [added as KNOWN_EXTRA] and ALL WC qualifiers comp13/14). Net: ~255 matches with odds ≈ 19% of 1369 training natl → BELOW the 60% Step-3 gate.
+- Approaches exhausted for full coverage under robots.txt: slug-guess (soft-404 trap), archive pages (404), page nav (JS-rendered), sitemap crawl (partial), year-first slugs (trap). The only way to full coverage is either the robots-disallowed pagination params or a different data source — a scope/source DECISION that belongs to the user (Hard Rule #3/#7). STOPPED to surface it.
+- Files changed: src/scrape_betexplorer.py (new), data/natl_odds_raw.csv (generated, 255 rows)
+- Timestamp: 2026-07-22
+
+## Step 2 (RESOLVED): stage expansion + user-authorized pagination
+- Status: ✅ Complete (user authorized fetching the robots-disallowed ?stage= pages for this personal throttled/cached research scrape, 2026-07-22).
+- FIX: each competition page embeds all its stage IDs as relative `?stage=<id>` hrefs inside `ul.list-tabs--secondary` (both Qualification AND Final-tournament menus). Scraper now expands each page → base + all stage variants, parses + dedups by (date,home,away). BONUS: WC/Euro QUALIFIERS come free as qualification-stages of the parent world-cup-2022/euro-2024 pages — no separate qualifier slug needed; they join to our comp 13/14 by date+teams (join is competition-agnostic).
+- Full scrape: 2,229 rows (was 255). By page-cid: WC 890 (incl all WC2022 qualifiers), Euro 596, NationsL 510, Copa 60, Friendly 173. Friendlies still page-capped (unstaged → behind ?page=); will add ?page= only if Step-3 join coverage < 60%.
+- Files changed: src/scrape_betexplorer.py (stage expansion), data/natl_odds_raw.csv (2,229 rows, gitignored)
+- Timestamp: 2026-07-22
+
+## Step 3: Join + de-vig + feature build — src/build_odds_feat.py
+- Status: ⚠️ Complete but coverage below gate (54% train / 35% eval_natl) — surfaced to user
+- Built src/build_odds_feat.py: alias-normalized join (date ±1, both orientations) + Shin de-vig. de-vig verified (pH+pD+pA=1.0000, overround mean 1.053). Emits data/ctx_odds.npz (738 matches ×[pH,pD,pA,ln_overround,has_odds]) + data/ctx_stage.npz (738 ×[knockout,has_stage]).
+- COVERAGE (training natl 1369): WC 100%, Euro 100%, NationsL 99%, Copa 100%, WCQ-CONMEBOL 100%, WCQ-UEFA 52% (2022-cycle only; 2026-cycle unreachable — world-cup-2026 is a soft-404 trap, tournament unplayed), Friendly 0% (BetExplorer friendly-international is nation-vs-CLUB + youth, not our senior nation-vs-nation). TOTAL 738/1369 = 53.9%.
+- GATE-LANE POWER ISSUE: pooled eval_natl (2024-08→2026-06) odds coverage only 137/397 = 35%, because the fully-covered tournaments (Euro/Copa 2024) sit in the TRAIN period while the eval period is qualifier/friendly-heavy (uncovered). Full-lane grid_info would dilute a real odds effect ~3× → the covered-SUBSET must be the evaluation unit, or eval-period odds must be boosted from a second source.
+- Retries done: senior-name aliases (Czechia/Türkiye/United States/…), ?page= pagination (friendlies join 0 regardless — source mismatch), world-cup-2026 (trap). Remaining gap is a genuine source limitation, not a bug/name fix.
+- Files changed: src/build_odds_feat.py (new), src/scrape_betexplorer.py (pagination), data/ctx_odds.npz + ctx_stage.npz (generated, gitignored)
+- Timestamp: 2026-07-22
+
+## Step 3b: Club odds folded into the feature (user insight)
+- Status: ✅ Complete
+- User asked why odds were national-only when the model trains on all matches — correct catch: DB already holds football-data.co.uk odds for club matches (b365*/avg*; 37,665 of 67,684 training club matches = 56%). build_odds_feat.py now seeds ctx_odds.npz with Shin-de-vigged DB club odds (prefer market-avg, else B365) + the 738 scraped national rows → 38,403 matches total. The model now LEARNS odds-usage from ~38k examples and transfers to nationals (established pretrain-club→transfer-natl pattern). eval_all lane becomes a real odds test (~56% covered) alongside eval_natl (35%).
+- de-vig verified on full bundle: prob sums 1.0000 (±0.001), overround mean sane.
+- Files changed: src/build_odds_feat.py, data/ctx_odds.npz (38,403×5, gitignored)
+- Timestamp: 2026-07-22
+
+## Step 4: WC-slate odds probe
+- Status: ✅ Complete (negative result — lane stays skipped for odds runs)
+- Probed all candidate sources for per-match WC2026 1X2 odds: team_db/bets.json match_odds EMPTY; team_db/odds.json = tournament FUTURES (champion odds, DraftKings snapshot), not per-match; bookmaker_props/specials = awards markets; worldcup/backtest/data has odds only for euro2024+wc2022; BetExplorer world-cup-2026 page doesn't exist (soft-404). → wc_odds.npz NOT built; --wc-extra runner change NOT needed; odds runs are evaluated on eval lanes only (wc_slate skipped, per the Phase-3 ctx-extra convention). A future second source (oddsportal / The Odds API covers 2026) can restore the lane.
+- Files changed: none
+- Git commit: skipped — no file changes
+- Timestamp: 2026-07-22
+
+## Step 6 (ran early, while Arm A trains): Arm B1 — inference market blend
+- Status: ✅ Complete — STRONG POSITIVE
+- blend_market.py: outcome-mass blend of cached combo-beta0-w1 grids toward de-vigged market; λ tuned on the odds-covered EARLYSTOP subset (2,360 matches; per-seed caches carry es rates); evaluated model-vs-blend on the SAME covered eval subsets (club 12,554 / natl 137).
+- RESULT: improvement is MONOTONIC in λ → λ*=0.9 (market trusted 90% on outcome masses — the literature's model≈market finding on our own data). Covered-subset deltas (blend−model): natl grid_info +0.0248 / rps −0.0082 / acc +1.5pp / ece −0.018; club grid_info +0.0166 / rps −0.0054 / acc +1.6pp / ece better. Registry row market-blend-b1 (seeds=0, flags.blend, λ*).
+- B2-PROMISE THRESHOLD MET (λ*≥0.15 AND covered natl improves) → training-time anchor (Step 7) will be built.
+- Deviations: initially coded λ-tuning on a club subset (thought es rates weren't cached) — corrected pre-run to plan-honest earlystop tuning (per-seed caches DO hold es_lh/es_la). Hit the known lazy-NpzFile gotcha once more (fixed: materialize before loop).
+- Files changed: experiments/ablation/blend_market.py (new), registry.jsonl (+1), RESULTS_ABLATION.md
+- Timestamp: 2026-07-22
