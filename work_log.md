@@ -186,3 +186,29 @@ Plan: plans/goalnet-ablation-phase-2-loss-levers-plan.md (autonomous, pause-betw
 - Wrote plans/goalnet-ablation-phase-2-to-3-handoff.md (runs+verdicts table, adopted config β0+W1 with rationale, canonical confirmation, Phase-3 implications: recency subsumed so momentum must beat time-decay, --ctx-extra mechanics, ops notes, resume pointer). Updated plans/goalnet-ablation-phase-state.md (phase 2→COMPLETE, current 3, new baseline=combo-beta0-w1). Updated memory fm-modeling-roadmap.md with Phase-2 verdict (context-clear-proof).
 - Validation: handoff sections present; phase-state shows phase 3.
 - Timestamp: 2026-07-22
+
+---
+# Work Log — GoalNet ablation program, Phase 3 (context features)
+Plan: plans/goalnet-ablation-phase-3-context-features-plan.md (autonomous, pause-between-phases)
+
+## Step 0: Re-confirm baseline + audit existing context
+- Status: ✅ Complete
+- context.npz = (90279, 10). Columns (from build_context.py): [home_elo, away_elo, elo_diff, home_form, away_form, form_diff, home_gdform, away_gdform, home_rest, away_rest]. So base already has Elo LEVEL, form LEVEL (mean pts last 5), goal-diff LEVEL (last 5), and REST-DAYS (capped 14, /14).
+- Anti-redundancy contract: Phase-3 momentum features must add DIRECTION/CHANGE (Elo delta over N matches, form slope/trend, streak length) — NOT level (present) and NOT recency (subsumed by β0+W1 in Phase 2). Rest-days already present → situational feature reduces to STAGE/knockout only.
+- Reference row combo-beta0-w1 present (13 registry rows).
+- Timestamp: 2026-07-22
+
+## Step 1: Stage/round + rest-days backfill investigation
+- Status: ✅ Complete
+- match table has NO stage/round/knockout/leg/group column. match_kind ∈ {'league' 87,572; 'national' 2,707} — only club-vs-national, no stage. No competition_stage anywhere. Stage data exists ONLY in worldcup team_db (WC2026 benchmark, not training data).
+- Rest-days ALREADY in context.npz (cols 9-10 home_rest/away_rest). So the only candidate situational feature (stage/knockout-shrinkage) is NOT BACKFILLABLE for the 69k training matches → Step 4 (stage feature) SKIPPED with cause. Available match-level extras not yet in context (referee, attendance, xg, b365 odds, formations) are out of Phase-3 scope (odds = Phase 4; referee/attendance were prior-tested neutral per RESULTS_WC2026).
+- SCOPE DECISION: Phase 3 = Elo-momentum/trajectory feature only (Steps 2-3). It must add direction/change beyond the existing Elo/form LEVELS and beyond recency (subsumed by β0+W1).
+- Timestamp: 2026-07-22
+
+## Step 2: Build Elo-momentum/trajectory bundle
+- Status: ✅ Complete
+- src/build_momentum.py → data/ctx_momentum.npz (90,279 matches, 7 feats): [home_elo_mom, away_elo_mom, elo_mom_diff, home_form_trend, away_form_trend, form_trend_diff, mom_cov]. elo_mom = (elo_now − elo_5-team-matches-ago)/400; form_trend = OLS slope of last-5 result points; mom_cov = fraction of both teams with ≥5 history (missingness signal). Same K/HOME_ADV/BASE + record-then-update order as build_context.py → leakage-free by construction.
+- Validation: all 69,053 players_imp mids covered (missing 0); elo_mom symmetric [−0.165,+0.164] mean ~0; form_trend std ~0.40; cov ∈ {0,0.5,1.0}, 95% full; 3358 (~5%) zero-momentum rows = teams' first ≤5 matches (expected). npz gitignored (regenerable, like value/venue bundles) → commit builder only.
+- Anti-redundancy: pure TRAJECTORY (Elo change + form direction), orthogonal to the existing Elo/form LEVELS in context.npz; must beat recency (subsumed) to pass.
+- Files: src/build_momentum.py (new)
+- Timestamp: 2026-07-22
