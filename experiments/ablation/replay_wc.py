@@ -72,6 +72,11 @@ CANDIDATES = [
 # games have been played that an update is not just fitting 3 games. This is realism-honest (a light
 # in-tournament nudge), not tuned to flatter the arm; a neutral/negative verdict is a valid finding.
 FT_LR, FT_EPOCHS, FT_WD, FT_MIN_GAMES = 3e-4, 3, 1e-4, 8
+# L2-SP (L2-to-init) anti-forgetting variant: penalise λ·‖θ−θ_pretrained‖² during fine-tune so the
+# update cannot drift far from the 69k-match base (a small-model alternative to LoRA that targets the
+# forgetting directly — no adapter path in the model zoo). λ NOT tuned on the WC slate.
+FT_L2SP = 1e-2
+MODES = ("frozen", "finetune", "finetune_l2sp")
 
 
 def build_wc_context(D, ctx_extra):
@@ -123,8 +128,9 @@ def infer_net(net, WC):
     return RA.infer(net, WC["Xhn"], WC["Rh"], WC["Xan"], WC["Ra"], WC["CTXn"])
 
 
-def finetune_step(net, tens, beta):
-    """A few gradient steps on the cumulative finished-WC tensor dict (Poisson NLL, core beta)."""
+def finetune_step(net, tens, beta, theta0=None, l2sp=0.0):
+    """A few gradient steps on the cumulative finished-WC tensor dict (Poisson NLL, core beta).
+    With l2sp>0, add λ·‖θ−θ0‖² over the trainable params (θ0 = pretrained snapshot) to bound drift."""
     if tens["Xh"].size(0) == 0:
         return
     opt = torch.optim.AdamW(net.parameters(), lr=FT_LR, weight_decay=FT_WD)
@@ -136,8 +142,28 @@ def finetune_step(net, tens, beta):
         loss = (pois(lh, tens["hg"]) + pois(la, tens["ag"])).mean()
         if beta:
             loss = loss - beta * RA.exp_points(torch.exp(lh), torch.exp(la), tens["hg"], tens["ag"]).mean()
+        if l2sp:
+            loss = loss + l2sp * sum(((p - theta0[k]) ** 2).sum()
+                                     for k, p in net.named_parameters() if k in theta0)
         loss.backward(); opt.step()
     net.eval()
+
+
+def walk_finetune(base_state, WC, mds, D, beta, n, l2sp=0.0):
+    """Walk-forward fine-tune from base_state: before each matchday, fine-tune on the WC games played
+    strictly earlier (once ≥FT_MIN_GAMES), then record that matchday's predictions. Returns (lh,la)."""
+    net = RA.models.build_model("goalnet", D["A"], D["nctx"])
+    net.load_state_dict({k: v.clone() for k, v in base_state.items()}); net.eval()
+    theta0 = {k: v.detach().clone() for k, v in net.named_parameters()} if l2sp else None
+    lh_full, la_full = np.zeros(n, np.float32), np.zeros(n, np.float32)
+    played = np.zeros(n, bool)
+    for _, mask in mds:
+        if played.sum() >= FT_MIN_GAMES:
+            finetune_step(net, wc_tensor(WC, played), beta, theta0, l2sp)
+        lh, la = infer_net(net, WC)                            # predict all; keep only this day's slots
+        lh_full[mask], la_full[mask] = lh[mask], la[mask]
+        played |= mask
+    return lh_full, la_full
 
 
 def wc_tensor(WC, mask):
@@ -148,9 +174,10 @@ def wc_tensor(WC, mask):
             "hg": RA.T(WC["hg"][idx]), "ag": RA.T(WC["ag"][idx])}
 
 
-def replay_one(cand, seeds, epochs):
-    """Train `seeds` pre-WC models for this candidate; produce frozen + finetune per-matchday grids.
-    Returns dict with per-mode seed-averaged grids (n,M,M) aligned to WC keys, plus rho + WC truth."""
+def replay_one(cand, seeds, epochs, modes):
+    """Train `seeds` pre-WC models for this candidate ONCE; from each base model produce every
+    requested mode's per-matchday grids (frozen / finetune / finetune_l2sp all reuse the same base
+    weights, so the mode comparison is on identical models). Returns per-mode seed-averaged grids."""
     beta, W = 0.0, 1.0
     D = RA.load_data("players_imp.npz", "pooled", None, cand["ctx_extra"], None)
     TR, ES = RA.make_split_tensors(D, W)
@@ -158,26 +185,20 @@ def replay_one(cand, seeds, epochs):
     mds = matchdays(WC["kickoff"])
     n = len(WC["keys"])
 
-    frozen_seed_rates, ft_seed_rates, es_rates, seed_rps = [], [], [], []
+    seed_rates = {m: [] for m in modes}
+    es_rates, seed_rps = [], []
     for s in range(seeds):
         net, brps, ep = RA.train_one(s, D, TR, ES, beta, epochs, arch="goalnet")
         seed_rps.append(brps)
         es_rates.append(RA.infer(net, D["Xhn"][D["es"]], D["Rh"][D["es"]],
                                  D["Xan"][D["es"]], D["Ra"][D["es"]], D["CTXn"][D["es"]]))
-        # FROZEN: one inference over the whole slate (weights fixed)
-        frozen_seed_rates.append(infer_net(net, WC))
-        # FINETUNE: walk matchdays; before predicting day d, fine-tune on games kicked off earlier
-        ft = {k: (v.clone() if hasattr(v, "clone") else v) for k, v in net.state_dict().items()}
-        ftnet = RA.models.build_model("goalnet", D["A"], D["nctx"]); ftnet.load_state_dict(ft); ftnet.eval()
-        lh_full, la_full = np.zeros(n, np.float32), np.zeros(n, np.float32)
-        played = np.zeros(n, bool)
-        for _, mask in mds:
-            if played.sum() >= FT_MIN_GAMES:
-                finetune_step(ftnet, wc_tensor(WC, played), beta)
-            lh, la = infer_net(ftnet, WC)                      # predict all; keep only this day's slots
-            lh_full[mask], la_full[mask] = lh[mask], la[mask]
-            played |= mask
-        ft_seed_rates.append((lh_full, la_full))
+        base_state = {k: v.clone() for k, v in net.state_dict().items()}
+        if "frozen" in modes:                                   # weights fixed: one slate inference
+            seed_rates["frozen"].append(infer_net(net, WC))
+        if "finetune" in modes:                                 # light walk-forward fine-tune
+            seed_rates["finetune"].append(walk_finetune(base_state, WC, mds, D, beta, n, l2sp=0.0))
+        if "finetune_l2sp" in modes:                            # L2-SP anti-forgetting fine-tune
+            seed_rates["finetune_l2sp"].append(walk_finetune(base_state, WC, mds, D, beta, n, l2sp=FT_L2SP))
         print(f"    [{cand['name']}] seed {s}: earlystop rps={brps:.4f} (e={ep})", flush=True)
 
     # DC rho tuned on the earlystop lane by league points (production convention) — off the WC slate
@@ -185,9 +206,9 @@ def replay_one(cand, seeds, epochs):
         RA.grids_from(es_rates, r), D["hg"][D["es"]], D["ag"][D["es"]]))
     prior = metrics.empirical_prior(D["hg"][D["tr"]], D["ag"][D["tr"]])
     out = {"keys": WC["keys"], "hg": WC["hg"], "ag": WC["ag"], "y": WC["y"], "rho": rho,
-           "prior": prior, "kickoff": WC["kickoff"], "mds": mds, "seed_rps": seed_rps,
-           "frozen": RA.grids_from(frozen_seed_rates, rho),
-           "finetune": RA.grids_from(ft_seed_rates, rho)}
+           "prior": prior, "kickoff": WC["kickoff"], "mds": mds, "seed_rps": seed_rps}
+    for m in modes:
+        out[m] = RA.grids_from(seed_rates[m], rho)
     return out
 
 
@@ -269,15 +290,18 @@ def main():
     ap.add_argument("--seeds", type=int, default=3)
     ap.add_argument("--epochs", type=int, default=150)
     ap.add_argument("--only", default=None, help="comma-separated candidate names to run")
+    ap.add_argument("--modes", default=",".join(MODES),
+                    help=f"comma-separated replay modes to run (default: {','.join(MODES)})")
     ap.add_argument("--report", action="store_true", help="reprint the table from existing registry rows")
     args = ap.parse_args()
     prod_s = prod_reference()
+    modes = [m for m in MODES if m in set(args.modes.split(","))]
 
     if args.report:
         results = []
         rows = {json.loads(l)["name"]: json.loads(l) for l in REG.read_text(encoding="utf-8").splitlines() if l.strip()}
         for cand in CANDIDATES:
-            for mode in ("frozen", "finetune"):
+            for mode in MODES:
                 nm = f"replay-{cand['name']}-{mode}"
                 if nm in rows and REPLAY_LANE in rows[nm]["metrics"]:
                     results.append((nm, rows[nm]["metrics"][REPLAY_LANE]))
@@ -290,8 +314,8 @@ def main():
     for cand in cands:
         t0 = time.time()
         print(f"\n--- candidate {cand['name']} (ctx_extra={cand['ctx_extra']}, blend={cand['blend']}) ---", flush=True)
-        R = replay_one(cand, args.seeds, args.epochs)
-        for mode in ("frozen", "finetune"):
+        R = replay_one(cand, args.seeds, args.epochs, modes)
+        for mode in modes:
             name, s = score_and_register(cand, mode, R[mode], R, args.seeds, t0)
             results.append((name, s))
             print(f"  {name}: grid_info={s['grid_info']:+.4f} rps={s['rps']:.4f} acc={s['acc']:.3f} "
