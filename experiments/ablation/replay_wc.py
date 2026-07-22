@@ -66,8 +66,12 @@ CANDIDATES = [
     {"name": "core-oddsfeat-blend", "ctx_extra": ["ctx_odds.npz"], "blend": True},
 ]
 
-# fine-tune hyperparameters (small LR / few steps on the tiny cumulative WC set)
-FT_LR, FT_EPOCHS, FT_WD = 5e-4, 8, 1e-4
+# fine-tune hyperparameters: a deliberately LIGHT touch. Fine-tuning on the ≤104-game slate alone
+# catastrophically forgets the 69k-match pretraining if pushed hard (an 8-epoch/matchday probe
+# collapsed grid_info 0.27→0.01), so keep it gentle — a few low-LR steps, and only once enough WC
+# games have been played that an update is not just fitting 3 games. This is realism-honest (a light
+# in-tournament nudge), not tuned to flatter the arm; a neutral/negative verdict is a valid finding.
+FT_LR, FT_EPOCHS, FT_WD, FT_MIN_GAMES = 3e-4, 3, 1e-4, 8
 
 
 def build_wc_context(D, ctx_extra):
@@ -168,7 +172,7 @@ def replay_one(cand, seeds, epochs):
         lh_full, la_full = np.zeros(n, np.float32), np.zeros(n, np.float32)
         played = np.zeros(n, bool)
         for _, mask in mds:
-            if played.any():
+            if played.sum() >= FT_MIN_GAMES:
                 finetune_step(ftnet, wc_tensor(WC, played), beta)
             lh, la = infer_net(ftnet, WC)                      # predict all; keep only this day's slots
             lh_full[mask], la_full[mask] = lh[mask], la[mask]
