@@ -70,6 +70,16 @@ def shin_devig(oh, od, oa):
 def main():
     con = db.connect(); con.row_factory = None; c = con.cursor()
     cid2name = {r[0]: r[1] for r in c.execute("SELECT club_id,name FROM club")}
+    # CLUB odds straight from the DB (football-data.co.uk columns; prefer market-average, else B365).
+    # This is where the model LEARNS to use odds (~38k examples); scraped national odds transfer onto it.
+    club_odds = {}
+    for mid, b3h, b3d, b3a, avh, avd, ava in c.execute(
+        "SELECT match_id, b365h, b365d, b365a, avgh, avgd, avga FROM match "
+        "WHERE competition_id NOT IN (9,10,11,12,13,14,15) AND home_goals IS NOT NULL "
+        "AND (avgh IS NOT NULL OR b365h IS NOT NULL)"):
+        oh, od, oa = (avh, avd, ava) if avh else (b3h, b3d, b3a)
+        if oh and od and oa and oh > 1 and od > 1 and oa > 1:
+            club_odds[mid] = (float(oh), float(od), float(oa))
     # DB national matches indexed by (isodate, normhome, normaway) -> match_id (both orientations)
     idx = {}
     natl_mids = set()
@@ -87,6 +97,14 @@ def main():
     train_mids = set(int(m) for m in z["mids"])
 
     odds_feat, stage_feat = {}, {}
+    # seed the odds features with DB club odds (training-set matches only; Shin de-vig same as scraped)
+    n_club = 0
+    for mid, (oh, od, oa) in club_odds.items():
+        if mid in train_mids:
+            p, O = shin_devig(oh, od, oa)
+            odds_feat[mid] = [p[0], p[1], p[2], np.log(O), 1.0]
+            n_club += 1
+    print(f"  club odds from DB: {n_club} training matches", flush=True)
     n_csv = n_join = 0
     unmatched = defaultdict(int)
     for r in csv.DictReader(open(CSV, encoding="utf-8")):
@@ -123,9 +141,11 @@ def main():
 
     save("ctx_odds.npz", odds_feat, "[pH,pD,pA,ln_overround,has_odds]")
     save("ctx_stage.npz", stage_feat, "[knockout,has_stage]")
-    tr_join = len(odds_feat)
-    print(f"\ncsv rows={n_csv}  joined-to-training={tr_join}/{len(train_mids & natl_mids)} "
-          f"training-natl ({tr_join/len(train_mids & natl_mids)*100:.1f}% coverage)", flush=True)
+    nat_join = sum(1 for m in odds_feat if m in natl_mids)
+    nat_train = len(train_mids & natl_mids)
+    print(f"\ncsv rows={n_csv}  total odds feats={len(odds_feat)} "
+          f"(club {len(odds_feat)-nat_join} + natl {nat_join}/{nat_train} = {nat_join/nat_train*100:.1f}% natl coverage)",
+          flush=True)
     ko = sum(v[0] for v in stage_feat.values())
     print(f"knockout matches among joined: {int(ko)}", flush=True)
     print("\ntop unmatched CSV names (aliases/non-DB teams):", flush=True)
