@@ -113,7 +113,7 @@ def load_data(npz, split, decay_halflife=None, ctx_extra=()):
         "A": A, "nctx": CTX.shape[1], "mu": mu, "sd": sd, "cmu": cmu, "csd": csd,
         "Xhn": Xhn, "Xan": Xan, "CTXn": CTXn, "Rh": d["Rh"], "Ra": d["Ra"],
         "hg": d["hg"], "ag": d["ag"], "y": d["y"], "natl": d["natl"], "dates": d["dates"],
-        "tr": tr, "es": es, "ev": ev, "decay": decay, "npz": npz,
+        "tr": tr, "es": es, "ev": ev, "decay": decay, "npz": npz, "mids": d["mids"],
     }
 
 
@@ -169,12 +169,23 @@ def make_split_tensors(D, W):
     TR = {"Xh": T(D["Xhn"][tr]), "Rh": T(D["Rh"][tr]), "Xa": T(D["Xan"][tr]), "Ra": T(D["Ra"][tr]),
           "C": T(D["CTXn"][tr]), "hg": T(D["hg"][tr]), "ag": T(D["ag"][tr]),
           "wt": T((np.where(D["natl"][tr], W, 1.0) * D["decay"][tr]).astype(np.float32))}
+    if "mkt" in D:                                   # market-anchor (B2): de-vigged probs + coverage
+        TR["mkt"] = T(D["mkt"][tr]); TR["mcov"] = T(D["mcov"][tr].astype(np.float32))
     ES = {"Xh": T(D["Xhn"][es]), "Rh": T(D["Rh"][es]), "Xa": T(D["Xan"][es]), "Ra": T(D["Ra"][es]),
           "C": T(D["CTXn"][es]), "y": D["y"][es]}
     return TR, ES
 
 
-def train_one(seed, D, TR, ES, beta, epochs, patience=25):
+def outcome_probs_torch(lh, la):
+    """Differentiable H/D/A probs from Poisson rate tensors (reuses the exp_points GG-grid)."""
+    ph = torch.exp(_ii.float().view(1, -1) * torch.log(lh.view(-1, 1).clamp(min=1e-6)) - lh.view(-1, 1) - _lf.view(1, -1))
+    pa = torch.exp(_ii.float().view(1, -1) * torch.log(la.view(-1, 1).clamp(min=1e-6)) - la.view(-1, 1) - _lf.view(1, -1))
+    P = ph.unsqueeze(2) * pa.unsqueeze(1); P = P / P.sum(dim=[1, 2], keepdim=True).clamp(min=1e-9)
+    return torch.stack([torch.tril(P, -1).sum([1, 2]), torch.diagonal(P, dim1=1, dim2=2).sum(1),
+                        torch.triu(P, 1).sum([1, 2])], dim=1)
+
+
+def train_one(seed, D, TR, ES, beta, epochs, patience=25, anchor=0.0):
     """Train one GoalNet on TRAIN (early-stop on earlystop lane by RPS). Mirrors train_goals.main."""
     torch.manual_seed(seed); np.random.seed(seed)
     Xhtr, Rhtr, Xatr, Ratr, Ctr = TR["Xh"], TR["Rh"], TR["Xa"], TR["Ra"], TR["C"]
@@ -202,6 +213,11 @@ def train_one(seed, D, TR, ES, beta, epochs, patience=25):
             loss = ((pois(lh, hgtr[b]) + pois(la, agtr[b])) * wt[b]).mean()
             if beta:
                 loss = loss - beta * (exp_points(torch.exp(lh), torch.exp(la), hgtr[b], agtr[b]) * wt[b]).mean()
+            if anchor:
+                op = outcome_probs_torch(torch.exp(lh), torch.exp(la))
+                mk = TR["mkt"][b]
+                kl = (mk * (torch.log(mk.clamp(min=1e-9)) - torch.log(op.clamp(min=1e-9)))).sum(1)
+                loss = loss + anchor * (kl * TR["mcov"][b]).mean()
             loss.backward(); opt.step()
         sched.step()
         r = val_rps()
@@ -228,6 +244,14 @@ def run(args):
                 sys.exit(f"refusing: name '{args.name}' already in registry (use --force-rerun to add a rerun row)")
     t0 = time.time()
     D = load_data(args.npz, args.split, args.decay_halflife, args.ctx_extra)
+    if args.market_anchor:
+        oz = np.load(ROOT / "data" / "ctx_odds.npz")
+        _of, _om = oz["feats"], oz["mids"]               # materialize once (NpzFile is lazy)
+        omap = {int(m): _of[i, :3] for i, m in enumerate(_om)}
+        D["mkt"] = np.array([omap.get(m, np.array([1/3, 1/3, 1/3])) for m in D["mids"]], np.float32)
+        D["mcov"] = np.array([m in omap for m in D["mids"]])
+        print(f"  --market-anchor {args.market_anchor}: KL to de-vigged odds on "
+              f"{int(D['mcov'][D['tr']].sum()):,} covered train matches", flush=True)
     print(f"data={args.npz} split={args.split} A={D['A']} nctx={D['nctx']} "
           f"train={int(D['tr'].sum()):,} earlystop={int(D['es'].sum()):,} eval={int(D['ev'].sum()):,}", flush=True)
 
@@ -259,7 +283,7 @@ def run(args):
             seed_rps.append(float(zc["brps"]))
             print(f"  seed {s}: resumed from cache (earlystop rps={float(zc['brps']):.4f})", flush=True)
             continue
-        net, brps, ep = train_one(s, D, TR, ES, args.beta, args.epochs)
+        net, brps, ep = train_one(s, D, TR, ES, args.beta, args.epochs, anchor=args.market_anchor or 0.0)
         esr = infer(net, D["Xhn"][D["es"]], D["Rh"][D["es"]], D["Xan"][D["es"]], D["Ra"][D["es"]], D["CTXn"][D["es"]])
         evr = infer(net, D["Xhn"][ev], D["Rh"][ev], D["Xan"][ev], D["Ra"][ev], D["CTXn"][ev])
         cache = {"es_lh": esr[0], "es_la": esr[1], "ev_lh": evr[0], "ev_la": evr[1], "brps": brps}
@@ -309,7 +333,8 @@ def run(args):
         "config": {"npz": args.npz, "split": args.split, "beta": args.beta, "W": args.w,
                    "seeds": args.seeds, "epochs": args.epochs, "rho_policy": f"val-tuned:{best_rho}",
                    "ctx_extra": list(args.ctx_extra), "decay_halflife": args.decay_halflife,
-                   "flags": {}, "notes": args.notes},
+                   "flags": ({"market_anchor": args.market_anchor} if args.market_anchor else {}),
+                   "notes": args.notes},
         "data": {"npz_mtime": npz_mtime, "n": int(len(D["y"])), "ctx_dim": int(D["nctx"]),
                  "seed_earlystop_rps": [round(r, 4) for r in seed_rps]},
         "metrics": M, "wall_min": round((time.time() - t0) / 60.0, 2),
@@ -493,6 +518,8 @@ def main():
     ap.add_argument("--seeds", type=int, default=5)
     ap.add_argument("--epochs", type=int, default=150)
     ap.add_argument("--decay-halflife", type=float, default=None)
+    ap.add_argument("--market-anchor", type=float, default=None,
+                    help="B2: weight of KL(de-vigged odds || model outcome probs) on covered train matches")
     ap.add_argument("--ctx-extra", nargs="*", default=[])
     ap.add_argument("--notes", default="")
     ap.add_argument("--force-rerun", action="store_true")

@@ -296,3 +296,9 @@ Plan: plans/goalnet-ablation-phase-4-market-anchor-plan.md (SESSION_MODE=autonom
 - Deviations: initially coded λ-tuning on a club subset (thought es rates weren't cached) — corrected pre-run to plan-honest earlystop tuning (per-seed caches DO hold es_lh/es_la). Hit the known lazy-NpzFile gotcha once more (fixed: materialize before loop).
 - Files changed: experiments/ablation/blend_market.py (new), registry.jsonl (+1), RESULTS_ABLATION.md
 - Timestamp: 2026-07-22
+
+## Step 7 prep: --market-anchor implemented (B2 threshold already met by B1)
+- Status: ✅ Implemented + smoke-tested (full runs queued behind Arm A)
+- run_ablation.py: --market-anchor <w> adds w·KL(de-vigged market ‖ model outcome probs) on odds-covered train matches (23,352 covered). Differentiable outcome probs via outcome_probs_torch (reuses the exp_points GG-grid); market probs loaded from ctx_odds.npz with uniform-fill + coverage mask (uncovered rows contribute 0 loss). Config records flags.market_anchor. Smoke (1 seed/2 epochs/w=0.3): exit 0, loss runs, row cleaned.
+- Files changed: experiments/ablation/run_ablation.py
+- Timestamp: 2026-07-22
