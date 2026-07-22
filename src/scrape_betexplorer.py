@@ -89,13 +89,24 @@ def enumerate_pages():
     return pages
 
 
-def parse_page(url, cid, season):
-    """Fetch a results page (skip soft-404 traps via <title>) and yield match rows."""
-    html = fetch.get(url, min_delay=1.5, retries=2, timeout=45)
+def _stage_urls(base_url, html):
+    """All stage variants of a competition page: base + each ?stage=<id> from the stage-nav menus
+    (list-tabs--secondary). Captures qualification + final-tournament stages the base page hides."""
+    soup = BeautifulSoup(html, "html.parser")
+    ids = []
+    for a in soup.select("ul.list-tabs--secondary a[href*='stage=']"):
+        m = re.search(r"stage=([A-Za-z0-9]{6,12})", a.get("href", ""))
+        if m and m.group(1) not in ids:
+            ids.append(m.group(1))
+    return [base_url] + [f"{base_url}?stage={sid}" for sid in ids]
+
+
+def _parse_rows(html, cid, season):
+    """Parse match rows from one results/stage page (returns [] for the soft-404 trap)."""
     soup = BeautifulSoup(html, "html.parser")
     title = soup.title.get_text(strip=True) if soup.title else ""
-    if title == TRAP_TITLE or len(html) > 700000:
-        return []  # soft-404 fallback page
+    if title == TRAP_TITLE:
+        return []
     rows = []
     for tr in soup.select("tr"):
         a = tr.select_one("a.in-match")
@@ -120,6 +131,22 @@ def parse_page(url, cid, season):
         if not (home and away and oh > 1 and od > 1 and oa > 1):
             continue
         rows.append([cid, season, date_td, home, away, oh, od, oa, knockout])
+    return rows
+
+
+def parse_page(url, cid, season):
+    """Fetch a competition-season page and ALL its ?stage= variants; return deduped match rows.
+    The base page shows only the final stage; the stage variants add group/qualification rounds."""
+    base = fetch.get(url, min_delay=1.5, retries=2, timeout=45)
+    if (BeautifulSoup(base, "html.parser").title.get_text(strip=True) if "<title" in base else "") == TRAP_TITLE:
+        return []
+    seen, rows = set(), []
+    for su in _stage_urls(url, base):
+        html = base if su == url else fetch.get(su, min_delay=1.5, retries=2, timeout=45)
+        for r in _parse_rows(html, cid, season):
+            key = (r[2], r[3], r[4])                 # (date, home, away) — dedup across stages
+            if key not in seen:
+                seen.add(key); rows.append(r)
     return rows
 
 
