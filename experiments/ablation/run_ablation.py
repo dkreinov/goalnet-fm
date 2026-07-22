@@ -34,6 +34,7 @@ sys.path.insert(0, str(ROOT / "src"))
 sys.path.insert(0, str(ROOT / "experiments" / "ablation"))
 import train_goals as tg  # noqa: E402
 import metrics  # noqa: E402
+import models  # noqa: E402
 import splits  # noqa: E402
 
 AB = ROOT / "experiments" / "ablation"
@@ -185,14 +186,15 @@ def outcome_probs_torch(lh, la):
                         torch.triu(P, 1).sum([1, 2])], dim=1)
 
 
-def train_one(seed, D, TR, ES, beta, epochs, patience=25, anchor=0.0):
-    """Train one GoalNet on TRAIN (early-stop on earlystop lane by RPS). Mirrors train_goals.main."""
+def train_one(seed, D, TR, ES, beta, epochs, patience=25, anchor=0.0, arch="goalnet"):
+    """Train one model on TRAIN (early-stop on earlystop lane by RPS). Mirrors train_goals.main.
+    arch="goalnet" is bit-for-bit the pre-Phase-5 code path (models.build_model parity rule)."""
     torch.manual_seed(seed); np.random.seed(seed)
     Xhtr, Rhtr, Xatr, Ratr, Ctr = TR["Xh"], TR["Rh"], TR["Xa"], TR["Ra"], TR["C"]
     hgtr, agtr, wt = TR["hg"], TR["ag"], TR["wt"]
     y_es = ES["y"]
     Vh, Vrh, Va_, Vra, Cv = ES["Xh"], ES["Rh"], ES["Xa"], ES["Ra"], ES["C"]
-    net = tg.GoalNet(D["A"], D["nctx"])
+    net = models.build_model(arch, D["A"], D["nctx"])
     opt = torch.optim.AdamW(net.parameters(), lr=2e-3, weight_decay=1e-4)
     sched = torch.optim.lr_scheduler.CosineAnnealingLR(opt, epochs)
     pois = nn.PoissonNLLLoss(log_input=True, full=True, reduction="none")
@@ -283,7 +285,8 @@ def run(args):
             seed_rps.append(float(zc["brps"]))
             print(f"  seed {s}: resumed from cache (earlystop rps={float(zc['brps']):.4f})", flush=True)
             continue
-        net, brps, ep = train_one(s, D, TR, ES, args.beta, args.epochs, anchor=args.market_anchor or 0.0)
+        net, brps, ep = train_one(s, D, TR, ES, args.beta, args.epochs,
+                                  anchor=args.market_anchor or 0.0, arch=args.arch)
         esr = infer(net, D["Xhn"][D["es"]], D["Rh"][D["es"]], D["Xan"][D["es"]], D["Ra"][D["es"]], D["CTXn"][D["es"]])
         evr = infer(net, D["Xhn"][ev], D["Rh"][ev], D["Xan"][ev], D["Ra"][ev], D["CTXn"][ev])
         cache = {"es_lh": esr[0], "es_la": esr[1], "ev_lh": evr[0], "ev_la": evr[1], "brps": brps}
@@ -333,7 +336,8 @@ def run(args):
         "config": {"npz": args.npz, "split": args.split, "beta": args.beta, "W": args.w,
                    "seeds": args.seeds, "epochs": args.epochs, "rho_policy": f"val-tuned:{best_rho}",
                    "ctx_extra": list(args.ctx_extra), "decay_halflife": args.decay_halflife,
-                   "flags": ({"market_anchor": args.market_anchor} if args.market_anchor else {}),
+                   "flags": ({**({"market_anchor": args.market_anchor} if args.market_anchor else {}),
+                              **({"arch": args.arch} if args.arch != "goalnet" else {})}),
                    "notes": args.notes},
         "data": {"npz_mtime": npz_mtime, "n": int(len(D["y"])), "ctx_dim": int(D["nctx"]),
                  "seed_earlystop_rps": [round(r, 4) for r in seed_rps]},
@@ -521,6 +525,7 @@ def main():
     ap.add_argument("--market-anchor", type=float, default=None,
                     help="B2: weight of KL(de-vigged odds || model outcome probs) on covered train matches")
     ap.add_argument("--ctx-extra", nargs="*", default=[])
+    ap.add_argument("--arch", default="goalnet", choices=models.ARCHS)
     ap.add_argument("--notes", default="")
     ap.add_argument("--force-rerun", action="store_true")
     ap.add_argument("--diagnose")

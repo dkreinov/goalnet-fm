@@ -28,7 +28,7 @@ day-by-day WC2026 replay backtest.
 | 5 | Architecture: cross-team attention; plus-minus ratings | PLANNED (2026-07-22, awaiting execution-mode choice) | plans/goalnet-ablation-phase-5-architecture-plan.md | — |
 | 6 | WC2026 day-by-day replay backtest + model selection + production retrain | skeleton | — | — |
 
-**Current phase:** 5 (PLANNED — see plans/goalnet-ablation-phase-5-architecture-plan.md; execute after mode choice). SESSION_MODE: not chosen for phase 5 yet. PHASE_MODE: pause-between-phases.
+**Current phase:** 5 (PLANNED — see plans/goalnet-ablation-phase-5-architecture-plan.md; execute after mode choice). SESSION_MODE: autonomous (chosen 2026-07-22). PHASE_MODE: pause-between-phases.
 **Last completed step:** Phase 1 COMPLETE (Steps 3→7 this session: commits f93d359, 6e2d7e6, e95c741,
 7db6727, 275db2e, + this Step-7 commit). Full detail in plans/goalnet-ablation-phase-1-to-2-handoff.md.
 **Next action:** PLAN Phase 5 (architecture: cross-team attention variant + plus-minus player
