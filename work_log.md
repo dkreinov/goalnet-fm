@@ -309,3 +309,12 @@ Plan: plans/goalnet-ablation-phase-4-market-anchor-plan.md (SESSION_MODE=autonom
 - Registry row ctx-odds; report regenerated (16 rows).
 - Files: registry.jsonl, RESULTS_ABLATION.md, work_log.md
 - Timestamp: 2026-07-22
+
+## Steps 7-9: B2 anchor runs, Arm S stage run, verdicts (covered-subset)
+- Status: ✅ Complete
+- anchor-kl01 (52min) / anchor-kl03 (50min): full lanes NEUTRAL (natl Δ+0.002/−0.002 vs combo); covered-subset natl also neutral (+0.152 vs base +0.154). B2 REJECTED — the KL anchor doesn't add beyond what feature/blend capture.
+- ctx-stage (48min): covered natl −0.032, full natl −0.009 → Arm S REJECTED as tested (thin ET/pen knockout flag, 31 covered matches; richer stage labels = future data collection; the collect-then-test debt for this representation is PAID).
+- COVERED-SUBSET verdict (n=137 identical natl eval matches): ctx-odds +0.0240 PASSES gate (best rps 0.1923 / acc 0.562 / ece 0.054); B1 blend +0.0248 PASSES; the two DON'T stack (ctx-odds+blend λ0.5 = +0.1803, only +0.002 more) — same market signal, two equivalent capture mechanisms. Full-lane: ctx-odds helps eval_all (+0.008) but dilutes full-natl (−0.012, 65% uncovered).
+- ADOPTED (DESIGN.md "Phase-4 adopted market/stage config"): market signal ADOPTED — ctx-odds feature for market-aware configs; B1 λ-blend as zero-training production layer; recommended production shape feature+λ0.5 blend. Phase-5 experiment default REMAINS combo-beta0-w1 (wc-lane comparability); Phase-5 winners must also be scored with the odds layer. RESULTS_WC2026.md narrative appended. --diagnose ctx-odds written.
+- Files: registry.jsonl (19 rows), RESULTS_ABLATION.md (+diagnostics), DESIGN.md, RESULTS_WC2026.md, work_log.md
+- Timestamp: 2026-07-22

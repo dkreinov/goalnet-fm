@@ -145,6 +145,32 @@ _Arm A: Shin-devigged closing 1X2 (38k club from DB + 738 natl scraped) vs beta0
 | eval_all | 21663 | 0.0842 (+0.1159) | 2.9059 (-0.1159) | 0.2063 (-0.0039) | 0.503 (+0.007) | 0.0165 (-0.0019) | 0.98 (+0.061) | 0.714 (-0.004) |
 | eval_natl | 397 | 0.2309 (+0.1041) | 2.9642 (-0.1041) | 0.1803 (-0.0014) | 0.574 (-0.003) | 0.0650 (+0.0271) | 1.14 (-0.167) | 0.758 (-0.058) |
 
+## anchor-kl01  ·  pooled · β=0.0 W=1.0 seeds=5 ep=150 · 38.24min · `2e6156f3` ⚠dirty
+_B2: KL market anchor w=0.1_
+
+| lane | n | grid_info | grid_nll | rps | acc | ece_outcome | exact_lift | pts_g_31 |
+|---|---|---|---|---|---|---|---|---|
+| eval_all | 21663 | 0.0772 (+0.1089) | 2.9129 (-0.1089) | 0.2088 (-0.0015) | 0.495 (-0.001) | 0.0116 (-0.0068) | 0.97 (+0.042) | 0.714 (-0.003) |
+| eval_natl | 397 | 0.2454 (+0.1186) | 2.9496 (-0.1186) | 0.1806 (-0.0011) | 0.569 (-0.008) | 0.0461 (+0.0081) | 1.19 (-0.111) | 0.773 (-0.043) |
+| wc_slate | 104 | 0.3028 | 2.8952 | 0.1559 | 0.683 | 0.1305 | 1.17 | 0.933 |
+
+## anchor-kl03  ·  pooled · β=0.0 W=1.0 seeds=5 ep=150 · 39.66min · `2e6156f3` ⚠dirty
+_B2: KL market anchor w=0.3_
+
+| lane | n | grid_info | grid_nll | rps | acc | ece_outcome | exact_lift | pts_g_31 |
+|---|---|---|---|---|---|---|---|---|
+| eval_all | 21663 | 0.0768 (+0.1085) | 2.9133 (-0.1085) | 0.2088 (-0.0014) | 0.496 (+0.000) | 0.0156 (-0.0028) | 0.97 (+0.047) | 0.715 (-0.003) |
+| eval_natl | 397 | 0.2398 (+0.1130) | 2.9552 (-0.1130) | 0.1808 (-0.0010) | 0.572 (-0.005) | 0.0479 (+0.0100) | 1.33 (+0.028) | 0.793 (-0.023) |
+| wc_slate | 104 | 0.2983 | 2.8997 | 0.1561 | 0.683 | 0.1315 | 1.17 | 0.933 |
+
+## ctx-stage  ·  pooled · β=0.0 W=1.0 seeds=5 ep=150 · 47.13min · `2e6156f3` ⚠dirty
+_Arm S: knockout/stage flag (collect-then-test debt)_
+
+| lane | n | grid_info | grid_nll | rps | acc | ece_outcome | exact_lift | pts_g_31 |
+|---|---|---|---|---|---|---|---|---|
+| eval_all | 21663 | 0.0776 (+0.1093) | 2.9125 (-0.1093) | 0.2090 (-0.0012) | 0.496 (-0.000) | 0.0127 (-0.0057) | 0.97 (+0.049) | 0.715 (-0.003) |
+| eval_natl | 397 | 0.2341 (+0.1073) | 2.9609 (-0.1073) | 0.1802 (-0.0015) | 0.582 (+0.005) | 0.0391 (+0.0012) | 1.22 (-0.083) | 0.773 (-0.043) |
+
 ---
 
 # Diagnostics
@@ -330,4 +356,69 @@ Top-3-mass recall by true scoreline — wc_slate:
 
 **(4) Verdict.**
 On the national lane the model adds **+0.2432 nats** of score-level information over the modal-score prior (grid_nll 2.952 vs prior 3.195); exact-score lift **1.33×** the always-modal rate; outcome ECE 0.054; sharpness 2.93 nats. Off-modal EV-picks (357 of them) hit at precision **0.129** vs mean prior cell prob 0.065 — the model is extracting genuine off-modal score signal. WC-slate grid_info +0.2992, exact_lift 1.17×. On the broad all-competitions lane, by contrast, grid_info is **+0.0762** (exact_lift 0.96×) — the model modestly beats the prior there: its score-level edge is concentrated on the national/WC lanes it is upweighted (W) for, which is the intended target. So the network is not merely echoing the modal score on the games that matter, but it adds little scoreline information on club-heavy fixtures.
+
+
+## Diagnostics: ctx-odds
+
+Prior null = train-split empirical score grid; modal scoreline = **1-1** (P=0.123). DC rho=-0.15. Does the model add score-level information, or coast on the modal-score prior?
+
+**(1) Score-level information — grid-NLL vs the empirical-prior null**
+
+| lane | n | grid_nll | grid_nll_prior | grid_info (nats) | sharpness (nats) | ece |
+|---|---|---|---|---|---|---|
+| eval_all | 21663 | 2.9059 | 2.9901 | +0.0842 | 2.909 | 0.0165 |
+| eval_natl | 397 | 2.9642 | 3.1950 | +0.2309 | 2.916 | 0.0650 |
+
+**(2) Per-scoreline lift — eval_natl.** EV-pick precision vs prior cell prob (off-modal picks with precision > prior_p = genuine score information):
+
+| EV-pick | picked | hits | precision | prior_p | off-modal? |
+|---|---|---|---|---|---|
+| 2-0 | 104 | 12 | 0.115 | 0.073 | yes |
+| 1-1 | 71 | 5 | 0.070 | 0.123 |  |
+| 1-0 | 67 | 8 | 0.119 | 0.100 | yes |
+| 2-1 | 40 | 5 | 0.125 | 0.088 | yes |
+| 1-2 | 40 | 3 | 0.075 | 0.070 | yes |
+| 0-2 | 33 | 5 | 0.152 | 0.048 | yes |
+| 0-1 | 32 | 2 | 0.062 | 0.079 | yes |
+| 3-0 | 8 | 1 | 0.125 | 0.039 | yes |
+| 0-3 | 2 | 0 | 0.000 | 0.022 | yes |
+
+Top-3-mass recall by true scoreline — eval_natl:
+
+| true score | n | top3_recall |
+|---|---|---|
+| 1-0 | 39 | 0.462 |
+| 2-0 | 37 | 0.514 |
+| 1-1 | 36 | 0.972 |
+| 0-0 | 34 | 0.471 |
+| 2-1 | 28 | 0.464 |
+| 0-1 | 24 | 0.208 |
+| 1-2 | 23 | 0.217 |
+| 0-2 | 22 | 0.364 |
+| 2-2 | 19 | 0.000 |
+| 3-0 | 17 | 0.294 |
+
+**(3) Calibration reliability — eval_natl** (outcome max-prob & exact-cell):
+
+| kind | pred_bin | mean_pred | observed | n |
+|---|---|---|---|---|
+| outcome | 0.03-0.17 | 0.116 | 0.060 | 149 |
+| outcome | 0.17-0.23 | 0.201 | 0.141 | 149 |
+| outcome | 0.23-0.27 | 0.251 | 0.201 | 149 |
+| outcome | 0.27-0.29 | 0.283 | 0.324 | 148 |
+| outcome | 0.29-0.32 | 0.304 | 0.289 | 149 |
+| outcome | 0.32-0.42 | 0.366 | 0.342 | 149 |
+| outcome | 0.42-0.55 | 0.481 | 0.523 | 149 |
+| outcome | 0.55-0.88 | 0.664 | 0.785 | 149 |
+| exact | 0.10-0.11 | 0.110 | 0.140 | 50 |
+| exact | 0.11-0.12 | 0.117 | 0.082 | 49 |
+| exact | 0.12-0.13 | 0.123 | 0.060 | 50 |
+| exact | 0.13-0.13 | 0.130 | 0.102 | 49 |
+| exact | 0.13-0.14 | 0.135 | 0.100 | 50 |
+| exact | 0.14-0.14 | 0.140 | 0.122 | 49 |
+| exact | 0.14-0.14 | 0.143 | 0.080 | 50 |
+| exact | 0.14-0.15 | 0.148 | 0.080 | 50 |
+
+**(4) Verdict.**
+On the national lane the model adds **+0.2309 nats** of score-level information over the modal-score prior (grid_nll 2.964 vs prior 3.195); exact-score lift **1.14×** the always-modal rate; outcome ECE 0.065; sharpness 2.92 nats. Off-modal EV-picks (326 of them) hit at precision **0.110** vs mean prior cell prob 0.065 — the model is extracting genuine off-modal score signal. WC-slate lane N/A (--ctx-extra run). On the broad all-competitions lane, by contrast, grid_info is **+0.0842** (exact_lift 0.98×) — the model modestly beats the prior there: its score-level edge is concentrated on the national/WC lanes it is upweighted (W) for, which is the intended target. So the network is not merely echoing the modal score on the games that matter, but it adds little scoreline information on club-heavy fixtures.
 

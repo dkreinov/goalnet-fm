@@ -500,3 +500,21 @@ distributional metrics and found the two points-oriented knobs were hurting prob
 Adopted as the harness default core-training config for Phase-3+ experiments (β=0, W=1). Production
 goalnet.pt (β=3, W=15, natl-finetune) is unchanged — a production retrain is a Phase-6 decision.
 Full numbers: experiments/ablation/RESULTS_ABLATION.md; program state: plans/goalnet-ablation-phase-state.md.
+
+## Ablation Phase 4 — market anchor (2026-07-22, adopted)
+
+Scraped BetExplorer closing 1X2 odds for national matches (2,229 rows; tournaments ~100% covered,
+friendlies/2026-quals unavailable) and combined them with the club odds already in the DB →
+`data/ctx_odds.npz` (38,403 matches, Shin de-vigged). Findings on the odds-covered national eval
+subset (n=137, identical matches for every config):
+- **The market carries real, non-redundant signal: ~+0.024 nats of score-level information**, captured
+  equivalently by an odds *context feature* (ctx-odds: acc +5pp, best rps/ece) or a *post-hoc
+  outcome-mass blend* toward the market (λ*=0.9 — the market dominates outcome opinion). The two do
+  NOT stack (same signal). Training-time KL anchoring is neutral; a thin knockout-flag stage feature
+  is rejected.
+- **Adopted**: ctx-odds feature for market-aware configs + the λ-blend as a zero-training production
+  layer (best known combo: feature + λ0.5 blend). Phase-5 experiment default stays combo-beta0-w1
+  (keeps the odds-less WC-slate lane comparable); production/replay must include the market layer.
+- Coverage TODO: eval-window national odds only 35% (BetExplorer limits) — oddsportal (free) /
+  The Odds API (paid) next to fill 2026 qualifiers, friendlies, and the WC slate.
+Full numbers: experiments/ablation/RESULTS_ABLATION.md ("Phase-4 adopted market/stage config" in DESIGN.md).

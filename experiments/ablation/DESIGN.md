@@ -165,3 +165,45 @@ Takeaway: re-derived context features (level/recency/trajectory) are at their ce
 + data scale. The next lever must bring **genuinely new information** — Phase 4 (de-vigged bookmaker
 odds anchor), which the literature (see memory) flags as the strongest untried signal.
 `src/build_momentum.py` is kept (leakage-free trajectory builder) in case a larger dataset revisits it.
+
+## Phase-4 adopted market/stage config (frozen 2026-07-22)
+
+**ADOPTED: the market signal is real (+~0.024 nats on national games where odds exist), captured
+equivalently by either the odds FEATURE or the post-hoc BLEND — they do NOT stack (same signal).**
+
+Covered-subset evidence (the 137 odds-covered pooled-eval national matches, identical for all runs):
+| config | grid_info | rps | acc | ece |
+|---|---|---|---|---|
+| combo-beta0-w1 (base) | +0.1543 | 0.2007 | 0.511 | 0.100 |
+| **ctx-odds (Arm A, feature)** | **+0.1783** | **0.1923** | **0.562** | **0.054** |
+| base + B1 blend λ0.9 | +0.1790 | 0.1925 | 0.526 | 0.082 |
+| ctx-odds + blend λ0.5 (best known) | +0.1803 | 0.1918 | 0.533 | 0.042 |
+| anchor-kl01 / kl03 (B2) | +0.152 / +0.152 | ~base | ~base | — |
+| ctx-stage (Arm S) | +0.1225 | 0.2011 | 0.533 | — |
+
+Verdicts:
+- **Arm A (ctx-odds feature): ADOPTED for market-aware configs.** Best single config on covered
+  natl (rps/acc/ece all best); also improves the 56%-covered full club lane (eval_all grid_info
+  +0.076→+0.084, rps −0.0025). Caveat: full-natl lane reads −0.012 vs base because 65% of that lane
+  lacks odds (dilution + mild mask noise) — so it is NOT the Phase-5 experiment default (see below).
+- **Arm B1 (post-hoc outcome-mass blend, λ*=0.9): ADOPTED as the zero-training production layer.**
+  Equivalent gain to the feature, applies to ANY model without retraining, no full-lane downside
+  (identity where odds are missing). λ tuned on the odds-covered earlystop subset; monotonic to 0.9
+  — the market dominates outcome opinion (classic model≈market result, now on our own data).
+- **Arm B2 (training-time KL anchor): REJECTED** — neutral everywhere (w∈{0.1,0.3}); the anchor
+  does not transfer beyond what the feature/blend already capture.
+- **Arm S (stage/knockout): REJECTED as tested** — the thin ET/pen-derived knockout flag (31 covered
+  matches) adds nothing (covered −0.032). A richer stage feature would need real round labels
+  (future data collection); the collect-then-test debt for THIS representation is paid.
+
+**Phase-5 experiment default stays `combo-beta0-w1` (no odds feature)** so the frozen WC-slate lane
+(no odds available for it) remains comparable across runs. Phase-5 candidates must ALSO be scored
+with the odds layer (feature or blend) before any adoption; Phase-6 replay/production must include
+the market layer — recommended production shape: ctx-odds feature + λ≈0.5 blend (best known:
++0.1803 / rps 0.1918 / ece 0.042).
+
+**Coverage caveat + multi-source TODO:** natl odds coverage is 62% train / 35% eval (BetExplorer
+lacks senior friendlies + 2026-cycle qualifiers; WC-slate odds unavailable → wc lane skipped on
+odds runs). Next sources: oddsportal (free) then The Odds API (paid, 2022→) to fill eval-window
+qualifiers/friendlies + the WC slate. Odds inventory: `data/ctx_odds.npz` = 38,403 matches
+(37,665 club from DB football-data columns + 738 scraped national).
