@@ -31,6 +31,9 @@ day-by-day WC2026 replay backtest.
 **Current phase:** 6 (EXECUTING, SESSION_MODE: autonomous). Gate decisions: oddsportal-first (no
 paid API), bench feature backlogged, fine-tune ALL candidates, FULL production cutover.
 PHASE_MODE: moot (final phase).
+**Phase 6 progress:** Step 1 ✅ (OddsPortal WC odds, 100% slate coverage — src/scrape_oddsportal.py,
+src/build_wc_odds.py, data/wc_odds.npz; verified 33/33 scoreline match vs results.json). Step 2 🔄
+(replay driver experiments/ablation/replay_wc.py written, smoke-testing plumbing).
 **Last completed step:** Phase 5 COMPLETE (NULL) 2026-07-22 — see
 plans/goalnet-ablation-phase-5-to-6-handoff.md. Registry 23 rows.
 **Next action:** PLAN Phase 6. Candidate set is small: combo-beta0-w1 core ± market layer
