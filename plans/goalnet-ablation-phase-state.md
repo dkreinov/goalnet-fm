@@ -24,17 +24,21 @@ day-by-day WC2026 replay backtest.
 | 1 | Harness v2 + diagnostics + re-baseline | ✅ COMPLETE (2026-07-21) | plans/goalnet-ablation-phase-1-harness-plan.md | plans/goalnet-ablation-phase-1-to-2-handoff.md |
 | 2 | Loss-level levers: β purity, time-decay, natl-weight recheck | ✅ COMPLETE (2026-07-22) | plans/goalnet-ablation-phase-2-loss-levers-plan.md | plans/goalnet-ablation-phase-2-to-3-handoff.md |
 | 3 | Context features: Elo momentum; stage/rest backfill + feature | ✅ COMPLETE (2026-07-22, null) | plans/goalnet-ablation-phase-3-context-features-plan.md | plans/goalnet-ablation-phase-3-to-4-handoff.md |
-| 4 | Market anchor: BetExplorer scrape → de-vigged odds feature | NOT STARTED (plan it first) | — | — |
-| 5 | Architecture: cross-team attention; plus-minus ratings | skeleton | — | — |
+| 4 | Market anchor: BetExplorer scrape → de-vigged odds feature | ✅ COMPLETE (2026-07-22, ADOPTED) | plans/goalnet-ablation-phase-4-market-anchor-plan.md | plans/goalnet-ablation-phase-4-to-5-handoff.md |
+| 5 | Architecture: cross-team attention; plus-minus ratings | NOT STARTED (plan it first) | — | — |
 | 6 | WC2026 day-by-day replay backtest + model selection + production retrain | skeleton | — | — |
 
-**Current phase:** 4 (NOT STARTED — plan it first; market anchor / de-vigged odds). SESSION_MODE: autonomous. PHASE_MODE: pause-between-phases.
+**Current phase:** 5 (NOT STARTED — plan it first; architecture: cross-team attention + plus-minus). SESSION_MODE: autonomous. PHASE_MODE: pause-between-phases.
 **Last completed step:** Phase 1 COMPLETE (Steps 3→7 this session: commits f93d359, 6e2d7e6, e95c741,
 7db6727, 275db2e, + this Step-7 commit). Full detail in plans/goalnet-ablation-phase-1-to-2-handoff.md.
-**Next action:** PLAN Phase 4 (market anchor: BetExplorer de-vigged 1X2 odds for internationals → ctx
-feature AND residual-anchor A/B) as its own plan file, then execute. Adopted config for all Phase-4
-diffs = `combo-beta0-w1` (`--beta 0 --w 1`, base context). See phase-3-to-4 handoff for the odds data
-sources + the wc_slate-skip caveat for --ctx-extra runs.
+**Next action:** PLAN Phase 5 (architecture: cross-team attention variant + plus-minus player
+ratings) as its own plan file, then execute. Experiment default stays `combo-beta0-w1`; BUT winners
+must also beat the ODDS-INFORMED bar (+0.1803 covered natl = feature+λ0.5 blend) — see
+phase-4-to-5 handoff. Multi-source odds TODO open (oddsportal free → The Odds API paid) to lift natl
+eval coverage 35%→70%+ and enable WC-slate odds.
+**Phase-4 result (ADOPTED):** market signal is real (+0.024 nats covered natl; acc +5pp) — captured
+equivalently by ctx-odds feature or post-hoc λ0.9 blend (no stacking); KL training-anchor neutral;
+thin stage flag rejected. ctx_odds.npz = 38,403 matches (club DB + scraped natl).
 **Phase-2 result:** stripping the two points-biases (β=3→0, W=15→1) adds +0.10..+0.13 nats national/WC
 score-level info, flips the club lane positive, keeps exact-pick ability — adopted β0+W1.
 **Phase-3 result (NULL):** Elo-momentum/trajectory adds nothing over β0+W1 (eval_natl grid_info −0.004);

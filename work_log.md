@@ -318,3 +318,14 @@ Plan: plans/goalnet-ablation-phase-4-market-anchor-plan.md (SESSION_MODE=autonom
 - ADOPTED (DESIGN.md "Phase-4 adopted market/stage config"): market signal ADOPTED — ctx-odds feature for market-aware configs; B1 λ-blend as zero-training production layer; recommended production shape feature+λ0.5 blend. Phase-5 experiment default REMAINS combo-beta0-w1 (wc-lane comparability); Phase-5 winners must also be scored with the odds layer. RESULTS_WC2026.md narrative appended. --diagnose ctx-odds written.
 - Files: registry.jsonl (19 rows), RESULTS_ABLATION.md (+diagnostics), DESIGN.md, RESULTS_WC2026.md, work_log.md
 - Timestamp: 2026-07-22
+
+## Step 10: Phase 4→5 handoff
+- Status: ✅ Complete
+- Wrote plans/goalnet-ablation-phase-4-to-5-handoff.md (runs+verdicts, adopted config, odds inventory + 35%-eval caveat + multi-source TODO, scraping ops lessons, Phase-5 skeleton with the odds-informed bar). Updated phase-state (4→COMPLETE ADOPTED, current 5) + memory fm-modeling-roadmap.
+- Timestamp: 2026-07-22
+
+## Phase 4 Final Summary
+- Steps 1-10 complete. Commits: 0fa4904, ff2a877, e79fbd7, ad34909, 1270d6a, 8eda7a9, 2e6156f, ee3891e + Step-10 docs.
+- Headline: market signal ADOPTED (+0.024 nats covered natl, acc +5pp; feature ≡ blend, no stacking; anchor + stage rejected). First new info source to pass since the harness was built.
+- User contributions mid-phase: authorized ?stage= pagination (unlocked full coverage + qualifiers); caught the club-odds omission (601→38k odds examples).
+- Status: COMPLETE. STOP at phase boundary (pause-between-phases).
