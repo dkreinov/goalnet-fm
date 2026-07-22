@@ -212,3 +212,12 @@ Plan: plans/goalnet-ablation-phase-3-context-features-plan.md (autonomous, pause
 - Anti-redundancy: pure TRAJECTORY (Elo change + form direction), orthogonal to the existing Elo/form LEVELS in context.npz; must beat recency (subsumed) to pass.
 - Files: src/build_momentum.py (new)
 - Timestamp: 2026-07-22
+
+## Step 3: Ablate momentum (+ Steps 4-5 resolution)
+- Status: ✅ Complete
+- ctx-momentum (β0+W1 + --ctx-extra ctx_momentum.npz, 5-seed, 47.6min) vs combo-beta0-w1: eval_natl grid_info +0.2388 (Δ−0.0044, GATE needs ≥+0.02) → FAIL. eval_all grid_info Δ−0.0028. rps identical (Δ0.0000 natl / +0.0001 all). ece natl −0.013 (marginally better), all +0.003. exact_lift +0.056 natl / +0.037 all (not gated, within noise). pts_g_31 −0.003 natl.
+- VERDICT: REJECT momentum — trajectory adds nothing beyond level+recency. Base context already has Elo/form LEVEL; Phase-2 β0+W1 already subsumed recency; Elo-delta correlates with level and form-trend with mean-form, so no independent signal at 69k matches / 397 national eval. Exactly the informative null the Phase-2→3 handoff predicted.
+- Step 4 (stage feature): SKIPPED — not backfillable (no stage column in DB; only match_kind league/national). Step 5 (combine/diagnose/subset): N/A — nothing passed; a sub-feature run won't reach +0.02 when the full bundle is flat-negative; skipped diagnose (reserved for passing configs).
+- Phase-3 adopted context = NONE NEW (base 10-feat context stands). Next real lever = Phase 4 market anchor (brings genuinely NEW information, not re-derived features).
+- Files: experiments/ablation/registry.jsonl (+ctx-momentum row), RESULTS_ABLATION.md, work_log.md
+- Timestamp: 2026-07-22
