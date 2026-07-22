@@ -59,6 +59,7 @@ def _compet_id(region, stem):
 
 
 # Confirmed-real pages the sitemap omits (verified by direct title-check during Step-1 recon).
+# (world-cup-2026 has no real page yet — soft-404 trap — so 2026-cycle qualifiers aren't reachable here.)
 KNOWN_EXTRA = [
     ("https://www.betexplorer.com/football/south-america/copa-america-2024/results/", 12, "2024"),
 ]
@@ -142,11 +143,19 @@ def parse_page(url, cid, season):
         return []
     seen, rows = set(), []
     for su in _stage_urls(url, base):
-        html = base if su == url else fetch.get(su, min_delay=1.5, retries=2, timeout=45)
-        for r in _parse_rows(html, cid, season):
-            key = (r[2], r[3], r[4])                 # (date, home, away) — dedup across stages
-            if key not in seen:
-                seen.add(key); rows.append(r)
+        for page in range(1, 13):                    # page through each stage (unstaged pages, e.g. friendlies)
+            if su == url and page == 1:
+                html = base
+            else:
+                purl = su if page == 1 else su + ("&" if "?" in su else "?") + f"page={page}"
+                html = fetch.get(purl, min_delay=1.5, retries=2, timeout=45)
+            new = 0
+            for r in _parse_rows(html, cid, season):
+                key = (r[2], r[3], r[4])              # (date, home, away) — dedup across stages/pages
+                if key not in seen:
+                    seen.add(key); rows.append(r); new += 1
+            if new == 0:                              # no fresh matches on this page -> stop paging this stage
+                break
     return rows
 
 
