@@ -231,13 +231,19 @@ def run(args):
     print(f"data={args.npz} split={args.split} A={D['A']} nctx={D['nctx']} "
           f"train={int(D['tr'].sum()):,} earlystop={int(D['es'].sum()):,} eval={int(D['ev'].sum()):,}", flush=True)
 
-    # WC slate (raw frozen inputs) -> standardise with this run's train stats
-    w = splits.build_wc_inputs()
-    wXhn = ((w["Xh"] - D["mu"]) / D["sd"]).astype(np.float32); wXan = ((w["Xa"] - D["mu"]) / D["sd"]).astype(np.float32)
-    wCTXn = ((w["ctx"] - D["cmu"]) / D["csd"]).astype(np.float32)
-    wRh, wRa = w["Rh"].astype(np.int64), w["Ra"].astype(np.int64)
-    whg, wag = w["hs"].astype(np.float32), w["as_"].astype(np.float32)
-    wy = np.where(whg > wag, 0, np.where(whg == wag, 1, 2))
+    # WC slate (raw frozen inputs) -> standardise with this run's train stats. The frozen wc_inputs.npz
+    # carries only the 10-dim BASE context; --ctx-extra feature bundles aren't available for the WC teams,
+    # so the WC-slate lane is skipped for ctx-extra runs (same reason train_goals skips WC for --value/--venue).
+    wc_ok = not args.ctx_extra
+    if wc_ok:
+        w = splits.build_wc_inputs()
+        wXhn = ((w["Xh"] - D["mu"]) / D["sd"]).astype(np.float32); wXan = ((w["Xa"] - D["mu"]) / D["sd"]).astype(np.float32)
+        wCTXn = ((w["ctx"] - D["cmu"]) / D["csd"]).astype(np.float32)
+        wRh, wRa = w["Rh"].astype(np.int64), w["Ra"].astype(np.int64)
+        whg, wag = w["hs"].astype(np.float32), w["as_"].astype(np.float32)
+        wy = np.where(whg > wag, 0, np.where(whg == wag, 1, 2))
+    else:
+        print("  --ctx-extra set: WC-slate lane skipped (wc_inputs has base ctx only)", flush=True)
 
     ev = D["ev"]
     TR, ES = make_split_tensors(D, args.w)
@@ -248,16 +254,20 @@ def run(args):
         if sc.exists():
             zc = np.load(sc)
             es_lhla.append((zc["es_lh"], zc["es_la"])); ev_lhla.append((zc["ev_lh"], zc["ev_la"]))
-            wc_lhla.append((zc["wc_lh"], zc["wc_la"])); seed_rps.append(float(zc["brps"]))
+            if wc_ok:
+                wc_lhla.append((zc["wc_lh"], zc["wc_la"]))
+            seed_rps.append(float(zc["brps"]))
             print(f"  seed {s}: resumed from cache (earlystop rps={float(zc['brps']):.4f})", flush=True)
             continue
         net, brps, ep = train_one(s, D, TR, ES, args.beta, args.epochs)
         esr = infer(net, D["Xhn"][D["es"]], D["Rh"][D["es"]], D["Xan"][D["es"]], D["Ra"][D["es"]], D["CTXn"][D["es"]])
         evr = infer(net, D["Xhn"][ev], D["Rh"][ev], D["Xan"][ev], D["Ra"][ev], D["CTXn"][ev])
-        wcr = infer(net, wXhn, wRh, wXan, wRa, wCTXn)
-        np.savez_compressed(sc, es_lh=esr[0], es_la=esr[1], ev_lh=evr[0], ev_la=evr[1],
-                            wc_lh=wcr[0], wc_la=wcr[1], brps=brps)
-        es_lhla.append(esr); ev_lhla.append(evr); wc_lhla.append(wcr); seed_rps.append(brps)
+        cache = {"es_lh": esr[0], "es_la": esr[1], "ev_lh": evr[0], "ev_la": evr[1], "brps": brps}
+        if wc_ok:
+            wcr = infer(net, wXhn, wRh, wXan, wRa, wCTXn); wc_lhla.append(wcr)
+            cache.update(wc_lh=wcr[0], wc_la=wcr[1])
+        np.savez_compressed(sc, **cache)
+        es_lhla.append(esr); ev_lhla.append(evr); seed_rps.append(brps)
         print(f"  seed {s}: earlystop rps={brps:.4f} (stopped e={ep}); cached", flush=True)
 
     # shared DC-rho tuned on earlystop lane by league points (production convention)
@@ -266,14 +276,15 @@ def run(args):
 
     prior = metrics.empirical_prior(D["hg"][D["tr"]], D["ag"][D["tr"]])
     ev_grids = grids_from(ev_lhla, best_rho)
-    wc_grids = grids_from(wc_lhla, best_rho)
     natl_ev = D["natl"][ev]
     all_tag = "canonical_test" if args.split == "canonical" else "eval"
     lanes = {
         f"{all_tag}_all": (ev_grids, D["y"][ev], D["hg"][ev], D["ag"][ev]),
         f"{all_tag}_natl": (ev_grids[natl_ev], D["y"][ev][natl_ev], D["hg"][ev][natl_ev], D["ag"][ev][natl_ev]),
-        "wc_slate": (wc_grids, wy, whg, wag),
     }
+    if wc_ok:
+        wc_grids = grids_from(wc_lhla, best_rho)
+        lanes["wc_slate"] = (wc_grids, wy, whg, wag)
     M = {lane: metrics.suite(g, y, hg, ag, prior) for lane, (g, y, hg, ag) in lanes.items()}
     for lane, s in M.items():
         print(f"  {lane:20s} n={s['n']:5d} grid_nll={s['grid_nll']:.4f} grid_info={s['grid_info']:+.4f} "
@@ -282,13 +293,14 @@ def run(args):
 
     # per-seed rates cache (diagnostics / pick-layer never retrain)
     RATES.mkdir(exist_ok=True)
-    np.savez_compressed(
-        RATES / f"{args.name}.npz", rho=best_rho, split=args.split,
-        ev_lh=np.stack([a for a, _ in ev_lhla]), ev_la=np.stack([b for _, b in ev_lhla]),
-        ev_y=D["y"][ev], ev_hg=D["hg"][ev], ev_ag=D["ag"][ev], ev_natl=natl_ev,
-        wc_lh=np.stack([a for a, _ in wc_lhla]), wc_la=np.stack([b for _, b in wc_lhla]),
-        wc_y=wy, wc_hg=whg, wc_ag=wag, wc_keys=w["keys"],
-        prior=prior, tr_hg=D["hg"][D["tr"]], tr_ag=D["ag"][D["tr"]])
+    cache = {"rho": best_rho, "split": args.split,
+             "ev_lh": np.stack([a for a, _ in ev_lhla]), "ev_la": np.stack([b for _, b in ev_lhla]),
+             "ev_y": D["y"][ev], "ev_hg": D["hg"][ev], "ev_ag": D["ag"][ev], "ev_natl": natl_ev,
+             "prior": prior, "tr_hg": D["hg"][D["tr"]], "tr_ag": D["ag"][D["tr"]]}
+    if wc_ok:
+        cache.update(wc_lh=np.stack([a for a, _ in wc_lhla]), wc_la=np.stack([b for _, b in wc_lhla]),
+                     wc_y=wy, wc_hg=whg, wc_ag=wag, wc_keys=w["keys"])
+    np.savez_compressed(RATES / f"{args.name}.npz", **cache)
 
     commit, dirty = git_info()
     npz_mtime = datetime.fromtimestamp((ROOT / "data" / args.npz).stat().st_mtime, timezone.utc).isoformat()
@@ -401,13 +413,14 @@ def diagnose(name):
     modal = np.unravel_index(prior.argmax(), prior.shape)
     all_tag = "canonical_test" if split == "canonical" else "eval"
     ev_grids = grids_from_arrays(z["ev_lh"], z["ev_la"], rho)
-    wc_grids = grids_from_arrays(z["wc_lh"], z["wc_la"], rho)
     natl = z["ev_natl"]
     lanes = {
         f"{all_tag}_all": (ev_grids, z["ev_y"], z["ev_hg"], z["ev_ag"]),
         f"{all_tag}_natl": (ev_grids[natl], z["ev_y"][natl], z["ev_hg"][natl], z["ev_ag"][natl]),
-        "wc_slate": (wc_grids, z["wc_y"], z["wc_hg"], z["wc_ag"]),
     }
+    if "wc_lh" in z.files:                                   # absent for --ctx-extra runs (WC lane skipped)
+        wc_grids = grids_from_arrays(z["wc_lh"], z["wc_la"], rho)
+        lanes["wc_slate"] = (wc_grids, z["wc_y"], z["wc_hg"], z["wc_ag"])
     S = {ln: metrics.suite(g, y, hg, ag, prior) for ln, (g, y, hg, ag) in lanes.items()}
 
     L = [f"## Diagnostics: {name}", "",
@@ -419,8 +432,8 @@ def diagnose(name):
                    [[ln, S[ln]["n"], f"{S[ln]['grid_nll']:.4f}", f"{S[ln]['grid_nll_prior']:.4f}",
                      f"{S[ln]['grid_info']:+.4f}", f"{S[ln]['sharpness']:.3f}", f"{S[ln]['ece_outcome']:.4f}"]
                     for ln in lanes])
-    # per-scoreline lift on the two on-target lanes
-    for ln in (f"{all_tag}_natl", "wc_slate"):
+    # per-scoreline lift on the on-target lanes
+    for ln in [f"{all_tag}_natl"] + (["wc_slate"] if "wc_slate" in lanes else []):
         g, y, hg, ag = lanes[ln]
         pred_rows, true_rows = metrics.lift_table(g, hg, ag, prior)
         L += ["", f"**(2) Per-scoreline lift — {ln}.** EV-pick precision vs prior cell prob "
@@ -441,7 +454,7 @@ def diagnose(name):
                    [[k, f"{r['lo']:.2f}-{r['hi']:.2f}", f"{r['pred']:.3f}", f"{r['obs']:.3f}", r["n"]]
                     for k in ("outcome", "exact") for r in rel[k]])
     # verdict
-    nat = S[f"{all_tag}_natl"]; wc = S["wc_slate"]; alll = S[f"{all_tag}_all"]
+    nat = S[f"{all_tag}_natl"]; alll = S[f"{all_tag}_all"]; wc = S.get("wc_slate")
     ng, nhg, nag = lanes[f"{all_tag}_natl"][0], lanes[f"{all_tag}_natl"][2], lanes[f"{all_tag}_natl"][3]
     nat_pred_rows = metrics.lift_table(ng, nhg, nag, prior)[0]
     off = [r for r in nat_pred_rows
@@ -456,8 +469,8 @@ def diagnose(name):
           f"Off-modal EV-picks ({sum(r['picked'] for r in off)} of them) hit at precision "
           f"**{off_prec:.3f}** vs mean prior cell prob {off_prior:.3f} — "
           f"{'the model is extracting genuine off-modal score signal' if nat['grid_info'] > 0.02 and off_prec > off_prior else 'the model is largely coasting on the modal prior'}. "
-          f"WC-slate grid_info {wc['grid_info']:+.4f}, exact_lift {wc['exact_lift']:.2f}×. "
-          f"On the broad all-competitions lane, by contrast, grid_info is "
+          + (f"WC-slate grid_info {wc['grid_info']:+.4f}, exact_lift {wc['exact_lift']:.2f}×. " if wc else "WC-slate lane N/A (--ctx-extra run). ")
+          + f"On the broad all-competitions lane, by contrast, grid_info is "
           f"**{alll['grid_info']:+.4f}** (exact_lift {alll['exact_lift']:.2f}×) — "
           f"{'the model does NOT beat the empirical prior at the exact-cell level there' if alll['grid_info'] <= 0 else 'the model modestly beats the prior there'}: "
           "its score-level edge is concentrated on the national/WC lanes it is upweighted (W) for, "
