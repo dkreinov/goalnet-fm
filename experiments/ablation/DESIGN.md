@@ -153,9 +153,13 @@ Evidence:
   independent score-level signal once the base context supplies Elo/form LEVEL and Phase-2's β0+W1
   already subsumes recency. Elo-delta correlates with level; form-trend with mean-form. Informative
   null at 69k matches / 397 national eval, as the Phase-2→3 handoff predicted.
-- **Stage/knockout (NOT BUILT):** no stage/round column exists for the 69k training matches
-  (`match_kind` ∈ {league, national} only); stage data lives only in the WC benchmark. Not
-  backfillable → skipped. Rest-days is already in the base context.
+- **Stage/knockout (DEFERRED — needs a data-collection step, NOT rejected):** no stage/round column
+  exists in the DB today (`match_kind` ∈ {league, national} only), but the data IS collectable — WC
+  team_db already carries stage, and historical tournament rounds are scrapeable (ESPN summaries /
+  martj42 / transfermarkt) via the project's throttled fetch+cache. So this feature is OWED an honest
+  ablation after a backfill sub-phase; it was not tested here only for lack of *already-collected*
+  data, not on the merits. (Standing rule: never permanently skip a feature for missing data —
+  collect-then-test.) Rest-days is already in the base context.
 
 Takeaway: re-derived context features (level/recency/trajectory) are at their ceiling for this model
 + data scale. The next lever must bring **genuinely new information** — Phase 4 (de-vigged bookmaker

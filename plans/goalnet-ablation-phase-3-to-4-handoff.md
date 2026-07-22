@@ -15,9 +15,11 @@ Re-derived context features have hit their ceiling for this model + data scale:
   Trajectory adds no independent signal: the base context already carries Elo/form **level**, and
   Phase-2's β0+W1 already subsumed **recency** — so "direction/change" is redundant (Elo-delta ~ level,
   form-trend ~ mean-form). Exactly the null the Phase-2→3 handoff predicted.
-- **Stage/knockout (NOT BUILT):** no stage/round column exists for the 69k training matches
-  (`match_kind` ∈ {league, national} only); stage lives only in the WC benchmark → not backfillable.
-  Rest-days is already in the base context.
+- **Stage/knockout (DEFERRED to a data-collection step — NOT rejected):** no stage/round column exists
+  in the DB today (`match_kind` ∈ {league, national}), but it IS collectable (WC team_db already has
+  stage; historical tournament rounds scrapeable from ESPN/martj42/transfermarkt via the project's
+  throttled fetch+cache). Owed an honest ablation after a backfill. Standing rule (user, 2026-07-22):
+  never permanently skip a feature for missing data — collect-then-test. Rest-days already in base ctx.
 
 ## Runs table
 
