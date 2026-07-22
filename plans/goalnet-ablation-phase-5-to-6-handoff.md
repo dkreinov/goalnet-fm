@@ -1,22 +1,22 @@
 # Phase 5 → Phase 6 handoff — GoalNet ablation program
 
 **Phase 5 (Architecture: cross-team attention + plus-minus): COMPLETE (2026-07-22), NULL result.**
-SESSION_MODE was autonomous; PHASE_MODE pause-between-phases. A fresh session starts Phase 6 from
+SESSION_MODE was autonomous; PHASE_MODE pause-between-phases. A fresh session plans Phase 6 from
 this file + `plans/goalnet-ablation-phase-state.md` + `experiments/ablation/DESIGN.md` (the
-"Phase-5 adopted architecture" section has the verdict table).
+"Phase-5 adopted architecture" section has the verdict table). Phase 6 is the FINAL phase:
+replay backtest → model selection → production retrain → docs. It MUST be planned first
+(plan-skill process → `plans/goalnet-ablation-phase-6-replay-production-plan.md`).
 
-## Headline result
+## Headline result (Phase 5)
 
-**Architecture is NOT the bottleneck.** All four arms scored below `combo-beta0-w1` on eval_natl
-grid_info (baseline +0.2432, noise ~0.002): cross-team attention hurts whether fused early
-(cross22, joint 22-token transformer, −0.0175) or late (latecross, one cross-attn block, −0.0171);
-plus-minus ratings add nothing as team aggregate (−0.0184) or per-player channels (−0.0119).
-Combined with Phase 3 (momentum null) and Phase 4 (market adopted), the picture is consistent:
-**the per-team GoalNet at β0/W1 has extracted what the FM-attribute + context data offers; only
-genuinely NEW information sources (market odds, and someday richer event data) move the needle.**
-The odds-informed bar (+0.1803 covered natl) was never threatened.
-
-## Runs + verdicts (registry rows 20–23)
+**Architecture is not the current bottleneck.** All four arms scored below `combo-beta0-w1` on
+eval_natl grid_info (baseline +0.2432, noise ~0.002): cross-team attention hurts whether fused
+early (cross22, joint 22-token transformer, −0.0175) or late (latecross, one cross-attn block,
+−0.0171); plus-minus adds nothing as team aggregate (−0.0184) or per-player channels (−0.0119).
+Scope, stated honestly: two representative fusion points at ~150k params on 69k matches —
+DEPRIORITIZE architecture search, don't declare it closed; reopen only with a concrete hypothesis
+for information the market lacks, or 5–10× data. Combined with Phases 3–4: **only genuinely NEW
+information moves the needle; the odds-informed bar (+0.1803 covered natl) was never threatened.**
 
 | run | eval_natl Δ | eval_all Δ | wc_slate Δ | verdict |
 |---|---|---|---|---|
@@ -25,70 +25,97 @@ The odds-informed bar (+0.1803 covered natl) was never threatened.
 | ctx-pm-s3 | −0.0184 | −0.0005 | skipped | REJECT |
 | pm-channel-s3 | −0.0119 | −0.0023 | skipped | REJECT |
 
-No seeds=5 confirmations or odds-bar scoring were run (nothing passed the s3 gate — Step 7
-correctly skipped per plan).
+No s5 confirmations / odds-bar scoring (nothing passed the s3 gate — Step 7 skipped per plan).
 
-## What was built (kept, committed)
+## Frozen config for Phase 6 (the production candidate set)
 
-- `experiments/ablation/models.py` — arch zoo: goalnet (bit-for-bit parity vs tg.GoalNet, verified
-  on params/forward/train-step at seeds 0,7), Cross22GoalNet, LateCrossGoalNet.
-- `run_ablation.py --arch <name>` and `--pm-channel players_pm.npz` (asserts mids alignment,
-  appends per-slot channels pre-standardization, skips WC lane, records config.flags).
-- `src/build_plusminus.py` → `data/players_pm.npz` (69,053×11×2 per-slot [pm_shrunk, has_pm],
-  98.9% coverage, 1/69,053 slot-align failure) + `data/ctx_pm.npz` ([pm_team_diff, pm_cov]).
-  Leakage-free by construction (emission before accumulator update). Segment-level goal
-  attribution on 51,264 matches (own-goal `team_side` = benefiting side), minutes-weighted
-  fallback otherwise.
-- Finding worth remembering: net-of-club plus-minus is a rotation/transfer proxy — INVERSELY
-  correlated with winning (−0.10). Not a bug; a selection effect (low-minute players fatten GD in
-  blowouts; big-club signings carry weak-club histories).
+- **Core: standard GoalNet (per-team encoder), β=0, W=1** (`combo-beta0-w1` recipe, pooled split).
+- **Market layer options: (a) ctx-odds feature, (b) post-hoc λ-blend (identity off-coverage),
+  (c) both** — best known (c) with λ0.5 = +0.1803 covered natl / rps 0.1918 / ece 0.042.
+- No architecture variants survive. DC rho val-tuned per run; frozen metric suite; registry
+  append-only (23 rows).
+- Contracts that persist: `--arch`/`--pm-channel`/`--ctx-extra` runner flags; per-seed rate caches
+  under `experiments/ablation/rates/`; `blend_market.py` λ-blend pattern; covered-subset
+  (identical-matches) comparison methodology for any partially-covered feature.
 
-## Frozen config going into Phase 6 (production candidate)
+## Phase 6 planning inputs — decisions the plan must gate on
 
-- **Core: standard GoalNet (per-team encoder), β=0, W=1** (`combo-beta0-w1` recipe).
-- **Market layer: ctx-odds feature + λ≈0.5 outcome-mass blend** (best known: +0.1803 covered natl,
-  rps 0.1918, ece 0.042; see Phase-4 handoff).
-- DC rho stays val-tuned per run; pooled split; frozen metric suite; registry append-only (23 rows).
+Ask these BEFORE freezing Phase-6 steps (Open Questions Gate, one at a time, in this order):
 
-## Open questions / debts carried into Phase 6
+1. **Odds collection first?** There are NO WC2026 odds (BetExplorer lacks them) and natl eval
+   coverage is 35% (137/397). Without new sources, the replay compares candidates with a
+   handicapped market layer. Options: (a) oddsportal.com scrape first (free, same fetch.py-cache
+   style as BetExplorer, needs its own parser + soft-404 handling); (b) The Odds API (paid
+   ~$30–100 — REQUIRES explicit user spend approval; snapshots 2022→, covers WC/qualifiers/
+   friendlies); (c) replay without WC odds and score the market layer on the covered-natl lane
+   only. Recommendation to present: (a) first, (b) only on user approval, (c) as fallback.
+2. **Bench/subs feature — now (Phase 5b/6 side-arm) or backlog?** User-raised owed test
+   (collect-then-test rule): the model only sees the starting XI; the ANNOUNCED bench (known ~1h
+   pre-kickoff, like lineups) is real strength info (subs play ~30% of minutes). LEAKAGE TRAP:
+   `match_player` only has subs who APPEARED (manager choice correlates with game state) — the
+   clean feature needs the named unused bench, likely scraped from ESPN match pages (coverage
+   unknown; check first). Cheap-first: ctx feature "mean FM rating of top-3 bench players";
+   full version: 11+N tokens with a starter/bench embedding (`--arch benchnet` in models.py).
+3. **Incremental fine-tune during replay?** The replay may optionally fine-tune day-by-day on
+   finished WC games. Adds realism and cost/complexity; decide in or out before the plan freezes.
+4. **Production cutover scope.** The retrain step lifts the `src/train_goals.py`/`goalnet.pt`
+   no-edit rule for the FIRST time. The plan must archive the old checkpoint + specify what the
+   `wc-predictor` agent should load afterward, and which docs (README / RESULTS_WC2026 /
+   HOW_TO_PREDICT / memory) get the final narrative.
 
-- **Multi-source odds TODO (unchanged, most valuable next data work):** natl eval coverage is only
-  35% (137/397); no WC2026 odds. oddsportal (free) → The Odds API (paid, needs user spend
-  approval) → Betfair historic. Enables the wc_odds.npz `--wc-extra` extension (designed Phase-4
-  plan Step 4, unbuilt) and the replay's live market layer.
-- Stage/knockout still owed a fair test with REAL round labels (collect-then-test rule).
-- Plus-minus: RAPM-style ridge (opponent-adjusted) noted as possible future work, low priority
-  given the P1/P2 nulls.
+## Phase 6 skeleton (expand into the full plan)
 
-## Phase 6 skeleton (from program map, updated)
+Goal: walk-forward WC2026 day-by-day replay (only-past-info context, real lineups) over the
+104-game slate; compare the candidate set; select; retrain production core (goalnet v2, β0/W1)
++ market layer as a separate production step; update docs + memory; archive old checkpoints.
+- Inputs: frozen config above; `experiments/ablation/wc_inputs.npz` (104 games, raw inputs);
+  worldcup results.json (lineups); rate caches for all 23 registry rows; ctx_odds.npz (38,403).
+- Likely new files: replay driver under `experiments/ablation/` (walk-forward eval, reuses
+  splits/metrics); optional `src/scrape_oddsportal.py` + wc_odds.npz (`--wc-extra` pattern,
+  designed in Phase-4 plan Step 4, unbuilt); optional bench scrape + `ctx_bench.npz`.
+- Validation gate: replay pts + grid-NLL beat CURRENT PRODUCTION goalnet.pt's replay on the same
+  slate (eval_harness / old wc_cache.npz gives the production reference); calibration reported.
+- Risks: replay leakage (context must be rebuilt as-of each matchday); odds-coverage asymmetry
+  between candidates (use covered-subset discipline); retrain regression (archive + tripwire
+  against the registry reference row before cutover); scraping unknowns (oddsportal anti-bot).
+- Final step: production cutover + docs + memory + program close-out (no next-phase handoff —
+  this is the last phase; write a program retrospective instead).
 
-Goal: WC2026 day-by-day replay backtest (walk-forward, only-past-info context, real lineups,
-optional incremental fine-tune) + model selection + production retrain (goalnet v2) + docs/memory
-update + checkpoint archive. Updated by Phases 2–5:
-- Candidate set is now SMALL: combo-beta0-w1 core ± market layer (feature, blend, feature+blend).
-  No architecture variants survive.
-- Replay must handle odds coverage honestly (B1 blend is identity where odds missing) — with
-  current sources there are NO WC2026 odds, so the replay's market layer only helps if multi-source
-  collection runs first. Decide early in Phase 6 planning whether to collect odds first.
-- Production retrain touches `src/train_goals.py` / `goalnet.pt` for the first time — the
-  no-edit rule lifts ONLY in the retrain step, with the old checkpoint archived beforehand.
-- Gate: replay pts + grid-NLL beat current production's replay on the same 104-game slate.
+## Ops facts a fresh session needs
 
-## Resume pointer
+- Interpreter: `C:\Users\youruser\AppData\Local\Programs\Python\Python312\python.exe` (bare
+  `python` NOT on PATH). NumPy-2-vs-torch import banner is pre-existing and non-fatal.
+- Long runs: detached Windows scheduled tasks (Register/Start/Unregister-ScheduledTask, see
+  `experiments/ablation/run_phase5*.ps1` templates — direct `& $PY 'arg' ...` calls, never
+  single-element PS arrays) + hourly ScheduleWakeup checks. Runs are resumable via per-seed caches.
+- Gotchas: NEVER index a lazy NpzFile in a loop (materialize first — bit us 4×); `plans/` is
+  gitignored (always `git add -f`); subagents NOT allowed (user rule); s3 exploratory ≈ 25 min/run.
+- Repo state: clean at the addendum commit on master; registry 23 rows; scheduled tasks all deleted.
 
-Phase state: phase 5 → COMPLETE (null), current phase = 6 (NOT STARTED — plan it first per
-PHASE_MODE pause-between-phases). Registry 23 rows; working tree clean at the Step-9 commit.
+## Recommended setup for Phase 6
 
-## Addendum (2026-07-22, user question after phase close) — two clarifications
+- **Planning + execution model: Fable** (user's current default) or Opus — the replay driver is
+  the one genuinely design-heavy piece (walk-forward correctness = leakage risk); everything else
+  follows established harness patterns. Thinking: High.
+- Context: plan in a FRESH session (/clear) — this file + phase-state carry everything needed.
+- SESSION_MODE: ask at plan approval (user chose autonomous for Phases 2–5). PHASE_MODE moot
+  (final phase).
 
-1. **Arch-null scope, stated honestly:** Phase 5 tested TWO representative fusion points (early
-   cross22 / late latecross) at ~150k params on 69k matches. Symmetric failures (-0.018/-0.017)
-   justify DEPRIORITIZING architecture search, not closing it forever. Reopen only with a concrete
-   hypothesis for extracting information the market lacks, or with 5-10x data.
-2. **OWED TEST - bench/subs feature (user idea, collect-then-test rule):** the model only sees the
-   starting XI; the ANNOUNCED bench (known ~1h pre-kickoff, like lineups) is real strength info
-   (subs play ~30% of minutes). LEAKAGE TRAP: match_player only has subs who APPEARED (manager
-   choice correlates with game state) - the clean feature needs the named unused bench too, likely
-   scraped from ESPN match pages (coverage unknown). Cheap-first: ctx feature "mean FM rating of
-   top-3 bench players"; full version: 11+N tokens with starter/bench embedding (--arch benchnet).
-   Candidate for Phase 6 side-collection or a Phase 5b if user wants it before the replay.
+--- HANDOFF PROMPT (paste into fresh session) ---
+Continue plan from: plans/goalnet-ablation-phase-state.md
+Read first: plans/goalnet-ablation-phase-state.md + plans/goalnet-ablation-phase-5-to-6-handoff.md
+Resume at: Phase 6 (WC2026 replay + selection + production retrain) — plan it first, then execute
+Execution mode: not chosen yet   PHASE_MODE: pause-between-phases (final phase)
+Model: Fable (or Opus), thinking High
+Context: RECOMMENDED: run /clear before starting
+Before executing:
+1. Read the file(s) above fully.
+2. Check git status.
+3. Reconfirm frozen contracts (DESIGN.md Phase-2..5 adopted sections).
+4. Run the plan-skill process: ask the 4 gate questions in "Phase 6 planning inputs" ONE AT A TIME,
+   then save plans/goalnet-ablation-phase-6-replay-production-plan.md and ask execution mode.
+Important:
+- Candidates: combo-beta0-w1 core ± market layer only. The Odds API costs money — needs explicit user approval.
+- Production retrain lifts the train_goals.py/goalnet.pt no-edit rule ONLY in its retrain step (archive first).
+- Subagents not allowed; long runs = detached scheduled tasks; full interpreter path; plans/ needs git add -f.
+--- END HANDOFF PROMPT ---
