@@ -78,3 +78,17 @@ update + checkpoint archive. Updated by Phases 2–5:
 
 Phase state: phase 5 → COMPLETE (null), current phase = 6 (NOT STARTED — plan it first per
 PHASE_MODE pause-between-phases). Registry 23 rows; working tree clean at the Step-9 commit.
+
+## Addendum (2026-07-22, user question after phase close) — two clarifications
+
+1. **Arch-null scope, stated honestly:** Phase 5 tested TWO representative fusion points (early
+   cross22 / late latecross) at ~150k params on 69k matches. Symmetric failures (-0.018/-0.017)
+   justify DEPRIORITIZING architecture search, not closing it forever. Reopen only with a concrete
+   hypothesis for extracting information the market lacks, or with 5-10x data.
+2. **OWED TEST - bench/subs feature (user idea, collect-then-test rule):** the model only sees the
+   starting XI; the ANNOUNCED bench (known ~1h pre-kickoff, like lineups) is real strength info
+   (subs play ~30% of minutes). LEAKAGE TRAP: match_player only has subs who APPEARED (manager
+   choice correlates with game state) - the clean feature needs the named unused bench too, likely
+   scraped from ESPN match pages (coverage unknown). Cheap-first: ctx feature "mean FM rating of
+   top-3 bench players"; full version: 11+N tokens with starter/bench embedding (--arch benchnet).
+   Candidate for Phase 6 side-collection or a Phase 5b if user wants it before the replay.
