@@ -302,3 +302,10 @@ Plan: plans/goalnet-ablation-phase-4-market-anchor-plan.md (SESSION_MODE=autonom
 - run_ablation.py: --market-anchor <w> adds w·KL(de-vigged market ‖ model outcome probs) on odds-covered train matches (23,352 covered). Differentiable outcome probs via outcome_probs_torch (reuses the exp_points GG-grid); market probs loaded from ctx_odds.npz with uniform-fill + coverage mask (uncovered rows contribute 0 loss). Config records flags.market_anchor. Smoke (1 seed/2 epochs/w=0.3): exit 0, loss runs, row cleaned.
 - Files changed: experiments/ablation/run_ablation.py
 - Timestamp: 2026-07-22
+
+## Step 5: Arm A — odds as ctx feature
+- Status: ✅ Complete (full-lane verdict: mixed, as dilution predicted)
+- ctx-odds (β0+W1 + ctx_odds.npz 38k, 5 seeds, 51min) vs combo-beta0-w1, FULL lanes: eval_all IMPROVES (grid_info +0.008, rps −0.0025, exact_lift +0.02, pts +0.003 — clubs are 56% covered → feature learns and helps there). eval_natl full-lane Δgrid_info −0.012 (fails +0.02 gate) BUT 65% of that lane has no odds (mask=0) — dilution + possible slight noise from the masked feature. Honest per-covered-subset comparison happens in Step 9 via rates caches. exact_lift natl −0.19 (odds pull toward outcome-honesty, away from exact-pick bias — same trade seen with β).
+- Registry row ctx-odds; report regenerated (16 rows).
+- Files: registry.jsonl, RESULTS_ABLATION.md, work_log.md
+- Timestamp: 2026-07-22

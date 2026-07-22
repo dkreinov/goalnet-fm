@@ -137,6 +137,14 @@ _Arm B1: inference blend of combo-beta0-w1 grids toward de-vigged market_
 | lane | n | grid_info | grid_nll | rps | acc | ece_outcome | exact_lift | pts_g_31 |
 |---|---|---|---|---|---|---|---|---|
 
+## ctx-odds  ·  pooled · β=0.0 W=1.0 seeds=5 ep=150 · 47.24min · `8eda7a9d` ⚠dirty
+_Arm A: Shin-devigged closing 1X2 (38k club from DB + 738 natl scraped) vs beta0-W1_
+
+| lane | n | grid_info | grid_nll | rps | acc | ece_outcome | exact_lift | pts_g_31 |
+|---|---|---|---|---|---|---|---|---|
+| eval_all | 21663 | 0.0842 (+0.1159) | 2.9059 (-0.1159) | 0.2063 (-0.0039) | 0.503 (+0.007) | 0.0165 (-0.0019) | 0.98 (+0.061) | 0.714 (-0.004) |
+| eval_natl | 397 | 0.2309 (+0.1041) | 2.9642 (-0.1041) | 0.1803 (-0.0014) | 0.574 (-0.003) | 0.0650 (+0.0271) | 1.14 (-0.167) | 0.758 (-0.058) |
+
 ---
 
 # Diagnostics
