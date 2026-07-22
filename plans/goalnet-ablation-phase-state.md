@@ -26,10 +26,11 @@ day-by-day WC2026 replay backtest.
 | 3 | Context features: Elo momentum; stage/rest backfill + feature | ✅ COMPLETE (2026-07-22, null) | plans/goalnet-ablation-phase-3-context-features-plan.md | plans/goalnet-ablation-phase-3-to-4-handoff.md |
 | 4 | Market anchor: BetExplorer scrape → de-vigged odds feature | ✅ COMPLETE (2026-07-22, ADOPTED) | plans/goalnet-ablation-phase-4-market-anchor-plan.md | plans/goalnet-ablation-phase-4-to-5-handoff.md |
 | 5 | Architecture: cross-team attention; plus-minus ratings | ✅ COMPLETE (2026-07-22, NULL) | plans/goalnet-ablation-phase-5-architecture-plan.md | plans/goalnet-ablation-phase-5-to-6-handoff.md |
-| 6 | WC2026 day-by-day replay backtest + model selection + production retrain | skeleton | — | — |
+| 6 | WC2026 day-by-day replay backtest + model selection + production retrain | 🔄 IN PROGRESS (planned 2026-07-22) | plans/goalnet-ablation-phase-6-replay-production-plan.md | — (final phase; retrospective instead) |
 
-**Current phase:** 6 (NOT STARTED — plan it first; WC2026 replay + selection + production retrain).
-PHASE_MODE: pause-between-phases.
+**Current phase:** 6 (EXECUTING, SESSION_MODE: autonomous). Gate decisions: oddsportal-first (no
+paid API), bench feature backlogged, fine-tune ALL candidates, FULL production cutover.
+PHASE_MODE: moot (final phase).
 **Last completed step:** Phase 5 COMPLETE (NULL) 2026-07-22 — see
 plans/goalnet-ablation-phase-5-to-6-handoff.md. Registry 23 rows.
 **Next action:** PLAN Phase 6. Candidate set is small: combo-beta0-w1 core ± market layer
