@@ -31,7 +31,7 @@ for m in EVAL.values(): pooled |= m
 rng = np.random.default_rng(0)
 pre = dates < CUTOFF
 natl_pre = np.where(pre & natl)[0]; club_pre = np.where(pre & ~natl)[0]
-keep_club = rng.choice(club_pre, min(len(club_pre), 8000), replace=False)   # small: machine is RAM-starved
+keep_club = rng.choice(club_pre, min(len(club_pre), 18000), replace=False)
 keep = np.zeros(n, bool); keep[natl_pre] = True; keep[keep_club] = True; keep |= pooled
 kidx = np.where(keep)[0]   # sorted
 print(f"subset rows={len(kidx):,} (train nationals={len(natl_pre)}, train club~20k, +eval) | "
@@ -40,7 +40,8 @@ print(f"subset rows={len(kidx):,} (train nationals={len(natl_pre)}, train club~2
 def load_sub(name):
     arr = z[name]; sub = np.array(arr[kidx]); del arr; gc.collect(); return sub
 Xh = load_sub("Xh"); Xa = load_sub("Xa"); Rh = load_sub("Rh").astype(np.int64); Ra = load_sub("Ra").astype(np.int64)
-cz = np.load(ROOT / "data" / "context.npz"); cmap = {int(m): cz["ctx"][i] for i, m in enumerate(cz["mids"])}; cdim = cz["ctx"].shape[1]
+cz = np.load(ROOT / "data" / "context.npz"); _cctx, _cmids = cz["ctx"], cz["mids"]   # materialize ONCE (never index lazy npz in a loop)
+cmap = {int(m): _cctx[i] for i, m in enumerate(_cmids)}; cdim = _cctx.shape[1]
 emap, edim = RA._load_extra("ctx_odds.npz")
 CTX = np.stack([np.concatenate([cmap.get(int(mids[i]), np.zeros(cdim, np.float32)),
                                 emap.get(int(mids[i]), np.zeros(edim, np.float32))]) for i in kidx]).astype(np.float32)
@@ -60,7 +61,7 @@ def build_D():
             "decay": np.ones(len(kidx), np.float32), "npz": "players_imp.npz", "mids": midS,
             "mu": mu, "sd": sd, "cmu": cmu, "csd": csd}
 
-def run(seeds=2, epochs=150):
+def run(seeds=3, epochs=150):
     D = build_D(); TR, ES = RA.make_split_tensors(D, 1.0)
     es_r, ev_r = [], []
     for s in range(seeds):
