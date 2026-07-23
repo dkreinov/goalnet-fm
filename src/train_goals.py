@@ -181,6 +181,10 @@ def main():
     te = dates >= np.datetime64("2025-08-01")
     mu = Xh[tr].reshape(-1, A).mean(0); sd = Xh[tr].reshape(-1, A).std(0) + 1e-6
     Xhn = ((Xh - mu) / sd).astype(np.float32); Xan = ((Xa - mu) / sd).astype(np.float32)
+    NOPLAYERS = "--no-players" in sys.argv   # zero the FM player grades: isolate ctx(+odds)-only signal
+    if NOPLAYERS:
+        Xhn[:] = 0.0; Xan[:] = 0.0
+        print("  --no-players: FM player grades ZEROED (team strength from context/odds only)", flush=True)
     cmu = CTX[tr].mean(0); csd = CTX[tr].std(0) + 1e-6; CTXn = ((CTX - cmu) / csd).astype(np.float32)
     role_mean = {r: Xh[tr][Rh[tr] == r].mean(0) for r in range(4)}
 
@@ -338,7 +342,7 @@ def main():
         ckpt = {"state": states[0], "states": states, "A": A, "nctx": nctx, "rho": float(best_rho), "beta": BETA,
                 "mu": mu, "sd": sd, "cmu": cmu, "csd": csd, "attrs": ATTRS,
                 "role_mean": {r: role_mean[r] for r in range(4)}, "W": W, "natl_ft": FT, "value": VALON,
-                "venue": VENON, "odds": ODDSON}
+                "venue": VENON, "odds": ODDSON, "no_players": NOPLAYERS}
         outp = ROOT / arg("--out", "data/goalnet.pt")       # --out lets experiments avoid clobbering production
         outp.parent.mkdir(parents=True, exist_ok=True)
         torch.save(ckpt, outp)
