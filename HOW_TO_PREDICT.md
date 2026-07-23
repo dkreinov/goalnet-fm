@@ -30,16 +30,29 @@ Keys are `HOMECODE-AWAYCODE` (3-letter FIFA codes) from `worldcup/team_db/lineup
 a confirmed lineup are predictable. Map team names→codes via `worldcup/team_db/teams/<CODE>.json`
 (`team.name`). Results/scores are in `worldcup/team_db/results.json`.
 
-## (Re)building the trained model — only when needed
+## The production model — goalnet v2
 
-The checkpoint `data/goalnet.pt` already exists. Rebuild it only if missing or after changing the data:
+The live checkpoint `data/goalnet.pt` is **goalnet v2** (shipped 2026-07-23 by the six-phase ablation
+program; see `experiments/ablation/DESIGN.md`). Recipe: **GoalNet(β=0, W=1)** — a pure calibrated
+scoreline distribution with the old EV-points bias and national upweight removed — **plus a de-vigged
+market-odds context feature**, as a 5-seed ensemble. On the WC2026 slate it more than doubles the
+score-level information of the old β3/W15 model (grid_info +0.35 vs +0.13). The previous model is
+archived at `models/archive/goalnet_v1_20260723.pt`.
+
+The odds feature (`data/wc_odds.npz`, de-vigged 1X2, 100% WC-slate coverage) is applied automatically;
+games with no odds fall back gracefully to the core model (the feature is masked). `predict_game.py`
+also accepts `--market-blend` for an optional post-hoc λ0.5 blend toward the market (marginal on top of
+the baked-in feature; default off).
+
+### (Re)building it — only when missing or after changing the data
 ```bash
-python D:/Programming/claude/FM/src/train_goals.py --w 5 --epochs 150 --full
+python D:/Programming/claude/FM/src/train_goals.py --full --odds --ensemble 5
 ```
 - `--npz players_imp.npz` (default) — the 68k imputed training set (beats strict 48k).
-- `--w 5` — national-team matches upweighted 5× (helps nationals, no cost to clubs).
+- β=0 / W=1 are now the **defaults** (Phase-2 result: both were points-biases that hurt calibration).
+- `--odds` — bake the de-vigged market context (`data/ctx_odds.npz`, 56% train coverage; masked else).
 - `--full` — retrain on ALL matches (no held-out split) for the strongest production model, then save.
-- Add `--game KEY` to also print a detailed prediction at the end.
+- `--ensemble 5` — 5-seed ensemble (predict averages the per-match grids across seeds).
 
 ## Full data pipeline (only if rebuilding from the DB)
 

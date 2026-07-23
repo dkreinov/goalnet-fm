@@ -232,3 +232,46 @@ Conclusions frozen for Phase 6:
   verified), --pm-channel loader, src/build_plusminus.py.
 - The odds-informed bar (+0.1803 covered natl) was never threatened; production-path
   recommendation for Phase 6 remains ctx-odds feature + lambda~0.5 blend on the standard GoalNet.
+
+## Phase-6 selection + production cutover (2026-07-23): goalnet v2 = beta0/W1 + odds feature
+
+WC2026 day-by-day walk-forward replay over the 104-game slate (leakage-free: pre-WC model + frozen
+pre-tournament context; frozen arm reproduces the registry wc_slate eval as the driver tripwire,
+`replay-core-frozen` +0.2974 vs `combo-beta0-w1` wc_slate +0.2992). 4 candidates (core +/- ctx-odds
+feature +/- lambda0.5 blend) x 3 modes (frozen / light finetune / L2-SP finetune) x 3 seeds. Odds on
+the WC lane come from `data/wc_odds.npz` (OddsPortal scrape, 100% slate coverage; verified same
+tournament as results.json by 33/33 exact scoreline match). Lane `wc_replay`, prior = train-empirical.
+
+| config (frozen) | grid_info | rps | acc | ece | pts/g |
+|---|---|---|---|---|---|
+| **core-oddsfeat-blend** | +0.3513 | 0.1454 | 0.673 | 0.130 | 1.019 |
+| **core-oddsfeat (SELECTED core)** | +0.3486 | 0.1452 | 0.663 | 0.136 | 0.971 |
+| core-blend | +0.3249 | 0.1479 | 0.673 | 0.125 | 0.990 |
+| core (beta0/W1 only) | +0.2974 | 0.1553 | 0.683 | 0.122 | 0.933 |
+| PROD-REF baseline-beta3-w15 | +0.1463 | 0.1595 | 0.654 | 0.122 | 0.923 |
+
+Verdicts:
+- **Market FEATURE is the winning lever.** core-oddsfeat (+0.3486) beats core-blend (+0.3249) by a
+  real >noise margin (~0.024) and core (+0.2974) by +0.05. feature+blend (+0.3513) ties feature-only
+  within noise (Delta +0.0027, rps 0.0002 worse) -> ship the FEATURE, keep the blend as an OPTIONAL
+  `--market-blend` predict flag (not baked in).
+- **Fine-tune REJECTED (all candidates).** Frozen beats both fine-tune modes in every candidate.
+  L2-SP anti-forgetting beats the plain light fine-tune in all 4 (e.g. core +0.2066 vs +0.1945;
+  oddsfeat +0.2697 vs +0.2672) - confirming it does bound the drift from the 69k-match base - but
+  never overtakes frozen. The 104-game slate carries no exploitable in-tournament signal; the
+  program theme holds (only genuinely NEW information moves the needle, here the pre-match odds).
+- **beta0/W1 is the dominant win** (+0.15 grid_info over the shipped beta3/W15 model) and needs no
+  odds - the odds feature adds a further +0.05.
+
+**Production cutover (Step 5, no-edit rule lifted here only):** goalnet v2 = GoalNet(beta=0, W=1) +
+ctx-odds feature (nctx 10->15), 5-seed full-data ensemble. `src/train_goals.py` defaults flipped to
+beta0/W1 + new `--odds` flag; `src/predict_game.py` loads the odds flag, joins `data/wc_odds.npz` per
+game (home/away-orientation safe, masked -> core fallback when absent), optional `--market-blend`.
+v1 archived to `models/archive/goalnet_v1_20260723.pt` (NOT deleted). Tripwire
+(`experiments/ablation/tripwire_v2.py`): v2 WC grid_info +0.3507 (== replay winner, >= since
+full-data) vs archived v1 +0.1295 -> +0.221 grid_info / -0.010 rps, no regression. v2's pts_g_31
+(0.923) sits marginally below v1's (0.942) - the reference-only 3/1 metric the old beta3/W15 model
+was explicitly biased toward; never a gate (the Phase-2 trade-off, as designed).
+**Odds-source caveat:** single aggregator (OddsPortal avgOdds = ~7-book consensus, Shin de-vigged);
+multi-provider redundancy + friendly/qualifier coverage is the paid Odds-API future extension (the
+masked-feature plumbing already supports adding a second source additively).

@@ -26,14 +26,18 @@ day-by-day WC2026 replay backtest.
 | 3 | Context features: Elo momentum; stage/rest backfill + feature | ✅ COMPLETE (2026-07-22, null) | plans/goalnet-ablation-phase-3-context-features-plan.md | plans/goalnet-ablation-phase-3-to-4-handoff.md |
 | 4 | Market anchor: BetExplorer scrape → de-vigged odds feature | ✅ COMPLETE (2026-07-22, ADOPTED) | plans/goalnet-ablation-phase-4-market-anchor-plan.md | plans/goalnet-ablation-phase-4-to-5-handoff.md |
 | 5 | Architecture: cross-team attention; plus-minus ratings | ✅ COMPLETE (2026-07-22, NULL) | plans/goalnet-ablation-phase-5-architecture-plan.md | plans/goalnet-ablation-phase-5-to-6-handoff.md |
-| 6 | WC2026 day-by-day replay backtest + model selection + production retrain | 🔄 IN PROGRESS (planned 2026-07-22) | plans/goalnet-ablation-phase-6-replay-production-plan.md | — (final phase; retrospective instead) |
+| 6 | WC2026 day-by-day replay backtest + model selection + production retrain | ✅ COMPLETE (2026-07-23) | plans/goalnet-ablation-phase-6-replay-production-plan.md | — (final phase; retrospective below) |
 
-**Current phase:** 6 (EXECUTING, SESSION_MODE: autonomous). Gate decisions: oddsportal-first (no
-paid API), bench feature backlogged, fine-tune ALL candidates, FULL production cutover.
-PHASE_MODE: moot (final phase).
-**Phase 6 progress:** Step 1 ✅ (OddsPortal WC odds, 100% slate coverage — src/scrape_oddsportal.py,
-src/build_wc_odds.py, data/wc_odds.npz; verified 33/33 scoreline match vs results.json). Step 2 🔄
-(replay driver experiments/ablation/replay_wc.py written, smoke-testing plumbing).
+**PROGRAM COMPLETE (2026-07-23).** Phase 6 shipped goalnet v2 = beta0/W1 + ctx-odds feature (5-seed).
+See DESIGN.md "Phase-6 selection + production cutover" and the retrospective at the bottom of this file.
+
+**Phase 6 result (SHIPPED):** WC2026 walk-forward replay (4 candidates x 3 modes x 3 seeds) selected
+**core-oddsfeat frozen** (grid_info +0.3486 vs production ref +0.1463). Odds FEATURE is the winning
+lever (beats blend-only +0.3249 and core +0.2974); fine-tune rejected (frozen wins every candidate;
+L2-SP reduces forgetting but never beats frozen). Production goalnet v2 retrained (beta0/W1 + odds,
+full data); tripwire v2 +0.3507 vs archived v1 +0.1295. Gate decisions were: oddsportal-first (no
+paid API), bench feature backlogged, fine-tune ALL candidates (+ L2-SP added on user prompt), FULL
+cutover. v1 archived at models/archive/goalnet_v1_20260723.pt.
 **Last completed step:** Phase 5 COMPLETE (NULL) 2026-07-22 — see
 plans/goalnet-ablation-phase-5-to-6-handoff.md. Registry 23 rows.
 **Next action:** PLAN Phase 6. Candidate set is small: combo-beta0-w1 core ± market layer
@@ -116,4 +120,40 @@ core (goalnet v2) + keep 3/1 head as separate layer; update docs (README/RESULTS
 memory, and archive old checkpoints. Gate: replay pts + grid-NLL beat current production replay.
 
 ## Open questions / blockers
-- none currently (paid Odds API explicitly deferred; stage-source investigation is Phase 3 Step 1).
+- none (program complete). Deferred/backlog: paid Odds-API multi-provider source; bench/subs feature
+  (collect-then-test debt, leakage note in DESIGN); stage/round labels for a richer knockout feature.
+
+## Program retrospective (2026-07-23)
+
+Six-phase ablation program to rebuild GoalNet as a calibrated, tournament-agnostic scoreline model.
+Net result shipped: **goalnet v2 = beta0/W1 core + de-vigged market-odds feature**, which more than
+DOUBLES score-level information on the WC2026 slate vs the old production model (grid_info +0.35 vs
++0.13; rps 0.147 vs 0.157).
+
+**What moved the needle:**
+- **Phase 2 — loss purity (beta0/W1): the single biggest win (+0.15).** The EV-points decision term
+  (beta=3) and the 15x national upweight (W=15) were both points-biases that hurt the calibrated
+  distribution on every lane. Dropping them is free and dominant.
+- **Phase 4/6 — market odds (+0.05 more).** De-vigged bookmaker 1X2 as a context feature is the only
+  NEW-information lever that helped. Phase 4 proved it on covered national games; Phase 6 confirmed it
+  on the WC slate once OddsPortal gave 100% coverage. The trained feature beats a post-hoc blend.
+
+**What was NULL (informative negatives — re-derived signal is at ceiling for this data/model scale):**
+- Phase 3 — Elo-momentum / form-trajectory context: null over the Elo-LEVEL base.
+- Phase 5 — cross-team attention (early + late fusion) and plus-minus ratings: all below baseline.
+- Phase 6 — in-tournament fine-tuning (light AND L2-SP anti-forgetting): frozen wins every candidate;
+  the 104-game slate has no exploitable incremental signal. (L2-SP, added on user prompt, confirmed
+  it reduces catastrophic forgetting but still can't beat frozen.)
+- Thin stage/knockout flag (Phase 4): rejected as tested.
+
+**The through-line:** only genuinely NEW information (market odds) moved the needle; every re-derivation
+of already-present signal (trajectory, architecture, plus-minus, fine-tuning on the slate) hit a
+ceiling. Future gains need new information channels (richer event/xG data, announced-bench strength,
+multi-provider odds), not more modeling of the existing features.
+
+**Artifacts:** harness `experiments/ablation/` (run_ablation, replay_wc, tripwire_v2, metrics, splits,
+models, blend_market); registry.jsonl (35 rows incl. 12 wc_replay); DESIGN.md (frozen contracts +
+per-phase verdicts). Production: src/train_goals.py (beta0/W1 + --odds defaults), src/predict_game.py
+(odds + optional --market-blend), data/goalnet.pt (v2), models/archive/goalnet_v1_20260723.pt.
+Odds pipeline: src/scrape_oddsportal.py, src/build_wc_odds.py, data/wc_odds.npz + ctx_odds.npz.
+No next-phase handoff — this was the final phase.

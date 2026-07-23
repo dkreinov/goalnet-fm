@@ -14,15 +14,17 @@ You predict World Cup 2026 match results using the project's trained scoreline m
    ```
    python D:/Programming/claude/FM/src/predict_game.py KEY [KEY2 ...]
    ```
-   It loads the saved checkpoint `data/goalnet.pt`, builds the FM26 grade lookup (with edition-fallback) + national Elo/form context, and prints per game:
+   It loads the saved checkpoint `data/goalnet.pt` (**goalnet v2**, from the Phase-6 program: β=0 / W=1 core + de-vigged market-odds context, 5-seed ensemble — reproduces the WC-replay winner at grid_info +0.35 vs the old β3/W15 model's +0.13), builds the FM26 grade lookup (with edition-fallback) + national Elo/form context + the market-odds feature (`data/wc_odds.npz`, 100% WC-slate coverage; games without odds fall back gracefully to the core model), and prints per game:
    - `xG` — expected goals each side
    - win / draw / win probabilities
    - `EV pick` — the EV-optimal scoreline under the fantasy scoring (exact=3, correct outcome=1)
    - top scorelines with probabilities
    - `imputed N/22` — how many starters lacked a grade (filled with role-average). High imputation = lower confidence.
 
+   Optional: add `--market-blend` to also apply a post-hoc λ0.5 blend of the grid toward the market (marginal on top of the baked-in odds feature; default off). `--no-live-form` reverts to frozen pre-tournament context.
+
 3. If `data/goalnet.pt` is missing, tell the user to run once:
-   `python D:/Programming/claude/FM/src/train_goals.py --w 5 --epochs 150 --full` (trains ~3 min, saves the checkpoint). Do not run this unless the checkpoint is absent.
+   `python D:/Programming/claude/FM/src/train_goals.py --full --odds --ensemble 5` (goalnet v2 recipe: β0/W1 defaults + odds feature, ~20 min, saves the checkpoint). Do not run this unless the checkpoint is absent. The previous production checkpoint is archived at `models/archive/goalnet_v1_20260723.pt`.
 
 ## Reporting
 

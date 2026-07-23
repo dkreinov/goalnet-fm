@@ -205,6 +205,78 @@ _Phase 5 Arm P2: per-slot shrunk net-of-club plus-minus [pm,has_pm] appended to 
 | eval_all | 21663 | 0.0739 (+0.1056) | 2.9161 (-0.1056) | 0.2090 (-0.0012) | 0.496 (-0.000) | 0.0186 (+0.0002) | 0.94 (+0.017) | 0.707 (-0.011) |
 | eval_natl | 397 | 0.2313 (+0.1045) | 2.9637 (-0.1045) | 0.1808 (-0.0009) | 0.579 (+0.003) | 0.0565 (+0.0186) | 1.11 (-0.194) | 0.753 (-0.063) |
 
+## replay-core-frozen  ·  pooled · β=0.0 W=1.0 seeds=3 ep=0 · 29.23min · `6f91ae6c` ⚠dirty
+_Phase-6 WC replay: core / frozen_
+
+| lane | n | grid_info | grid_nll | rps | acc | ece_outcome | exact_lift | pts_g_31 |
+|---|---|---|---|---|---|---|---|---|
+
+## replay-core-finetune  ·  pooled · β=0.0 W=1.0 seeds=3 ep=0 · 29.24min · `6f91ae6c` ⚠dirty
+_Phase-6 WC replay: core / finetune_
+
+| lane | n | grid_info | grid_nll | rps | acc | ece_outcome | exact_lift | pts_g_31 |
+|---|---|---|---|---|---|---|---|---|
+
+## replay-core-finetune_l2sp  ·  pooled · β=0.0 W=1.0 seeds=3 ep=0 · 29.24min · `6f91ae6c` ⚠dirty
+_Phase-6 WC replay: core / finetune_l2sp_
+
+| lane | n | grid_info | grid_nll | rps | acc | ece_outcome | exact_lift | pts_g_31 |
+|---|---|---|---|---|---|---|---|---|
+
+## replay-core-oddsfeat-frozen  ·  pooled · β=0.0 W=1.0 seeds=3 ep=0 · 29.0min · `6f91ae6c` ⚠dirty
+_Phase-6 WC replay: core-oddsfeat / frozen_
+
+| lane | n | grid_info | grid_nll | rps | acc | ece_outcome | exact_lift | pts_g_31 |
+|---|---|---|---|---|---|---|---|---|
+
+## replay-core-oddsfeat-finetune  ·  pooled · β=0.0 W=1.0 seeds=3 ep=0 · 29.01min · `6f91ae6c` ⚠dirty
+_Phase-6 WC replay: core-oddsfeat / finetune_
+
+| lane | n | grid_info | grid_nll | rps | acc | ece_outcome | exact_lift | pts_g_31 |
+|---|---|---|---|---|---|---|---|---|
+
+## replay-core-oddsfeat-finetune_l2sp  ·  pooled · β=0.0 W=1.0 seeds=3 ep=0 · 29.01min · `6f91ae6c` ⚠dirty
+_Phase-6 WC replay: core-oddsfeat / finetune_l2sp_
+
+| lane | n | grid_info | grid_nll | rps | acc | ece_outcome | exact_lift | pts_g_31 |
+|---|---|---|---|---|---|---|---|---|
+
+## replay-core-blend-frozen  ·  pooled · β=0.0 W=1.0 seeds=3 ep=0 · 29.31min · `6f91ae6c` ⚠dirty
+_Phase-6 WC replay: core-blend / frozen_
+
+| lane | n | grid_info | grid_nll | rps | acc | ece_outcome | exact_lift | pts_g_31 |
+|---|---|---|---|---|---|---|---|---|
+
+## replay-core-blend-finetune  ·  pooled · β=0.0 W=1.0 seeds=3 ep=0 · 29.32min · `6f91ae6c` ⚠dirty
+_Phase-6 WC replay: core-blend / finetune_
+
+| lane | n | grid_info | grid_nll | rps | acc | ece_outcome | exact_lift | pts_g_31 |
+|---|---|---|---|---|---|---|---|---|
+
+## replay-core-blend-finetune_l2sp  ·  pooled · β=0.0 W=1.0 seeds=3 ep=0 · 29.33min · `6f91ae6c` ⚠dirty
+_Phase-6 WC replay: core-blend / finetune_l2sp_
+
+| lane | n | grid_info | grid_nll | rps | acc | ece_outcome | exact_lift | pts_g_31 |
+|---|---|---|---|---|---|---|---|---|
+
+## replay-core-oddsfeat-blend-frozen  ·  pooled · β=0.0 W=1.0 seeds=3 ep=0 · 28.77min · `6f91ae6c` ⚠dirty
+_Phase-6 WC replay: core-oddsfeat-blend / frozen_
+
+| lane | n | grid_info | grid_nll | rps | acc | ece_outcome | exact_lift | pts_g_31 |
+|---|---|---|---|---|---|---|---|---|
+
+## replay-core-oddsfeat-blend-finetune  ·  pooled · β=0.0 W=1.0 seeds=3 ep=0 · 28.77min · `6f91ae6c` ⚠dirty
+_Phase-6 WC replay: core-oddsfeat-blend / finetune_
+
+| lane | n | grid_info | grid_nll | rps | acc | ece_outcome | exact_lift | pts_g_31 |
+|---|---|---|---|---|---|---|---|---|
+
+## replay-core-oddsfeat-blend-finetune_l2sp  ·  pooled · β=0.0 W=1.0 seeds=3 ep=0 · 28.78min · `6f91ae6c` ⚠dirty
+_Phase-6 WC replay: core-oddsfeat-blend / finetune_l2sp_
+
+| lane | n | grid_info | grid_nll | rps | acc | ece_outcome | exact_lift | pts_g_31 |
+|---|---|---|---|---|---|---|---|---|
+
 ---
 
 # Diagnostics

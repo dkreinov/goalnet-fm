@@ -518,3 +518,40 @@ subset (n=137, identical matches for every config):
 - Coverage TODO: eval-window national odds only 35% (BetExplorer limits) — oddsportal (free) /
   The Odds API (paid) next to fill 2026 qualifiers, friendlies, and the WC slate.
 Full numbers: experiments/ablation/RESULTS_ABLATION.md ("Phase-4 adopted market/stage config" in DESIGN.md).
+
+## Ablation Phases 5-6 + PRODUCTION CUTOVER — goalnet v2 (2026-07-23, SHIPPED)
+
+**Phase 5 (architecture) — NULL.** Cross-team attention (early + late fusion) and plus-minus player
+ratings all scored below the combo-beta0-w1 baseline. The independent per-XI encoder + additive
+att/def rate equation stands; re-derived signal is at its ceiling (same family as Phase 3).
+
+**Phase 6 (WC2026 replay + selection + production).** Scraped the WC2026 slate's closing 1X2 from
+OddsPortal (`src/scrape_oddsportal.py` — replicates the site's encrypted archive endpoint; verified
+the "World Championship 2026" tournament IS our slate by 33/33 exact scoreline agreement with
+results.json) → `data/wc_odds.npz`, **100% coverage of all 104 games** (BetExplorer had none). Ran a
+walk-forward day-by-day replay (leakage-free) over 4 candidates x 3 modes (frozen / light fine-tune /
+L2-SP anti-forgetting fine-tune) x 3 seeds:
+
+| config (frozen) | grid_info | rps | pts/g |
+|---|---|---|---|
+| core-oddsfeat + blend | +0.3513 | 0.1454 | 1.019 |
+| **core-oddsfeat (SELECTED)** | **+0.3486** | **0.1452** | 0.971 |
+| core + blend | +0.3249 | 0.1479 | 0.990 |
+| core (β0/W1 only) | +0.2974 | 0.1553 | 0.933 |
+| old production (β3/W15) | +0.1463 | 0.1595 | 0.923 |
+
+- **The market-odds FEATURE is the winning lever** (+0.05 over core, beats the post-hoc blend). β0/W1
+  alone is the dominant win (+0.15 over the old model).
+- **Fine-tuning is rejected in every candidate** — frozen always wins. L2-SP anti-forgetting beats the
+  plain fine-tune everywhere (it does bound drift from the 69k-match base) but never overtakes frozen:
+  the 104-game slate carries no exploitable in-tournament signal.
+
+**Cutover: goalnet v2 = GoalNet(β=0, W=1) + de-vigged market-odds context, 5-seed full-data ensemble.**
+`train_goals.py` defaults flipped to β0/W1 + a new `--odds` flag; `predict_game.py` joins the odds
+per game (orientation-safe, masked→core fallback when absent) + optional `--market-blend`. The old
+model is archived at `models/archive/goalnet_v1_20260723.pt` (not deleted). Tripwire on the WC slate:
+**v2 grid_info +0.3507 vs archived v1 +0.1295** (+0.22 nats / −0.010 rps, no regression). v2's 3/1
+pts/g (0.923) is a hair below v1's (0.942) — the reference-only points metric the old β3/W15 model was
+explicitly biased toward; never a gate. Odds are a single aggregator (OddsPortal ~7-book consensus,
+Shin de-vigged); multi-provider redundancy is the paid Odds-API future extension.
+This closes the six-phase program (retrospective: plans/goalnet-ablation-phase-state.md).
