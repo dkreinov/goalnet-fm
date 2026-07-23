@@ -339,8 +339,10 @@ def main():
                 "mu": mu, "sd": sd, "cmu": cmu, "csd": csd, "attrs": ATTRS,
                 "role_mean": {r: role_mean[r] for r in range(4)}, "W": W, "natl_ft": FT, "value": VALON,
                 "venue": VENON, "odds": ODDSON}
-        torch.save(ckpt, ROOT / "data" / "goalnet.pt")
-        print(f"  saved data/goalnet.pt ({nseed} seed{'s' if nseed > 1 else ''})", flush=True)
+        outp = ROOT / arg("--out", "data/goalnet.pt")       # --out lets experiments avoid clobbering production
+        outp.parent.mkdir(parents=True, exist_ok=True)
+        torch.save(ckpt, outp)
+        print(f"  saved {outp.relative_to(ROOT)} ({nseed} seed{'s' if nseed > 1 else ''})", flush=True)
 
     # ---- score the played WC2026 games ----
     if VALON or VENON or ODDSON:   # in-script scoring builds a 10-feat ctx; skip for appended-feature models
