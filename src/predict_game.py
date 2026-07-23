@@ -26,6 +26,20 @@ WC = Path(r"D:\Programming\claude\worldcup\team_db")
 FMV = 3
 
 
+def _market_blend(P, mkt, lam):
+    """Rescale P's win/draw/loss regions toward market outcome probs mkt=[pH,pD,pA] by weight lam
+    (scoreline SHAPE stays the model's; outcome OPINION shifts toward the market). Phase-4/6 layer."""
+    M = P.shape[0]
+    ho = tg.hda_from_P(P)                       # current [H, D, A]
+    target = (1 - lam) * ho + lam * np.asarray(mkt, float)
+    out = P.copy().astype(float)
+    tl = np.tril(np.ones((M, M)), -1); dg = np.eye(M); tu = np.triu(np.ones((M, M)), 1)
+    for reg, j in ((tl, 0), (dg, 1), (tu, 2)):
+        if ho[j] > 1e-12:
+            out += (target[j] / ho[j] - 1.0) * (P * reg)
+    return out / out.sum()
+
+
 def _ev_grid(P):
     """EV(fantasy points) for every candidate pick cell (exact=3, correct outcome=1)."""
     ho = tg.hda_from_P(P); M = P.shape[0]; EV = np.zeros_like(P)
@@ -165,6 +179,27 @@ def main():
     nvmap = bvf.name_value_map(con) if VALUE else {}
     if VALUE:
         print(f"(value-baked model: club-value context on, {len(nvmap)} players mapped)")
+    ODDS = c.get("odds", False)                            # Phase-6 odds-baked model: de-vigged market ctx
+    odds_by_pair = {}                                      # frozenset(codes) -> (home_code, [pH,pD,pA,lnO,has])
+    if ODDS:
+        wz = np.load(ROOT / "data" / "wc_odds.npz", allow_pickle=True)
+        for i, k in enumerate(wz["keys"]):
+            kk = str(k)
+            odds_by_pair[frozenset(kk.split("-"))] = (kk.split("-")[0], wz["feats"][i].astype(np.float32))
+        print(f"(odds-baked model: de-vigged market context on, {len(odds_by_pair)} WC games with odds)")
+    MARKETBLEND = "--market-blend" in sys.argv             # optional post-hoc λ-blend toward market (default off)
+    BLEND_LAMBDA = float(_arg("--blend-lambda", "0.5"))
+
+    def odds_feat_for(hc, ac):
+        """Odds context [pH,pD,pA,lnO,has_odds] oriented to home=hc (swap pH/pA if the stored key is
+        away-home vs this call), or a zero mask when no odds exist for the pair."""
+        rec = odds_by_pair.get(frozenset((hc, ac)))
+        if rec is None:
+            return np.zeros(5, np.float32)
+        oh, feat = rec; of = feat.copy()
+        if oh != hc:
+            of[0], of[2] = of[2], of[0]
+        return of
     name2cid = {r[1]: r[0] for r in con.execute("SELECT club_id,name FROM club")}
     teams = {}
     for f in (WC / "teams").glob("*.json"):
@@ -273,6 +308,8 @@ def main():
             hn = [db.norm(p.get("full", "")) for p in gg.get("home_xi", [])]
             an = [db.norm(p.get("full", "")) for p in gg.get("away_xi", [])]
             ctx = np.concatenate([ctx, bvf.xi_value_feat(hn, an, nvmap)])
+        if ODDS:    # odds-baked model: append de-vigged market context (masked when no odds for this pair)
+            ctx = np.concatenate([ctx, odds_feat_for(hc, ac)])
         Xh = ((Xh - mu) / sd).astype(np.float32); Xa = ((Xa - mu) / sd).astype(np.float32)
         ctxn = ((ctx - cmu) / csd).astype(np.float32)
         grids = []
@@ -281,6 +318,10 @@ def main():
                 lh, la = nt(T(Xh[None]), T(Rh[None]), T(Xa[None]), T(Ra[None]), T(ctxn[None]))
                 grids.append(tg.score_matrix(math.exp(float(lh[0])), math.exp(float(la[0])), rho))
         P = np.mean(grids, 0); P = P / P.sum()         # ensemble = average score grids across seeds
+        if ODDS and MARKETBLEND:                       # optional post-hoc λ-blend toward market (Phase-4/6)
+            of = odds_feat_for(hc, ac)
+            if of[4] > 0:
+                P = _market_blend(P, of[:3], BLEND_LAMBDA)
         lhh = float((P.sum(1) * np.arange(P.shape[0])).sum())   # display xG = grid marginal means
         laa = float((P.sum(0) * np.arange(P.shape[1])).sum())
         ho = tg.hda_from_P(P); pk = pick_strategy(P, STRATEGY, BETA, QFIELD)

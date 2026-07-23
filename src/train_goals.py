@@ -136,7 +136,7 @@ def ctx_vec(h, a):
 def main():
     def arg(k, d):
         return sys.argv[sys.argv.index(k) + 1] if k in sys.argv else d
-    W = float(arg("--w", "15")); ep = int(arg("--epochs", "150"))
+    W = float(arg("--w", "1")); ep = int(arg("--epochs", "150"))   # Phase-2: W=1 (drop natl upweight bias)
     npz = arg("--npz", "players_imp.npz")     # default to the 68k imputed set (beats strict 48k)
     print(f"data={npz}", flush=True)
 
@@ -161,6 +161,14 @@ def main():
         VEN = np.stack([nmap.get(m, np.zeros(_nd, np.float32)) for m in mids]).astype(np.float32)
         CTX = np.concatenate([CTX, VEN], 1); nctx = CTX.shape[1]
         print(f"  --venue ON: context {nctx} feats (+ true_home/neutral/known)", flush=True)
+    ODDSON = "--odds" in sys.argv   # Phase-6 WINNER: bake de-vigged market 1X2 into context (data/ctx_odds.npz)
+    if ODDSON:
+        oz = np.load(ROOT / "data" / "ctx_odds.npz"); _of, _om = oz["feats"], oz["mids"]   # materialize (npz is lazy)
+        omap = {int(m): _of[i] for i, m in enumerate(_om)}; _od = _of.shape[1]
+        ODD = np.stack([omap.get(m, np.zeros(_od, np.float32)) for m in mids]).astype(np.float32)
+        CTX = np.concatenate([CTX, ODD], 1); nctx = CTX.shape[1]
+        print(f"  --odds ON: context {nctx} feats (+ de-vigged market [pH,pD,pA,lnO,has_odds]; "
+              f"{int(ODD[:, -1].sum()):,}/{len(mids):,} covered)", flush=True)
 
     con = db.connect()
     meta = {r[0]: (r[1], r[2], r[3]) for r in con.execute("SELECT match_id,competition_id,home_goals,away_goals FROM match")}
@@ -186,8 +194,10 @@ def main():
     wt = T(np.where(natl[tr], W, 1.0).astype(np.float32))
     Vh, Vrh, Va_, Vra, Cv, _, _ = g(va)
 
-    # decision-focused term: maximize EXPECTED FANTASY POINTS of the (soft) EV-pick, not just Poisson fit
-    BETA = float(arg("--beta", "3")); GG, TAU = 7, 0.08
+    # decision-focused term: maximize EXPECTED FANTASY POINTS of the (soft) EV-pick, not just Poisson fit.
+    # Phase-2 DROPPED it for production (BETA=0): the EV-points term was a points-bias that hurt the
+    # calibrated-distribution objective on every lane. Kept togglable via --beta for the reference schedule.
+    BETA = float(arg("--beta", "0")); GG, TAU = 7, 0.08
     _ii = torch.arange(GG + 1); _I = _ii.view(GG + 1, 1).expand(GG + 1, GG + 1)
     _J = _ii.view(1, GG + 1).expand(GG + 1, GG + 1)
     _O = torch.where(_I > _J, 0, torch.where(_I == _J, 1, 2)); _lf = torch.lgamma(_ii.float() + 1)
@@ -327,13 +337,14 @@ def main():
         # "states" = all seeds; predict averages the per-match score grids across seeds when present.
         ckpt = {"state": states[0], "states": states, "A": A, "nctx": nctx, "rho": float(best_rho), "beta": BETA,
                 "mu": mu, "sd": sd, "cmu": cmu, "csd": csd, "attrs": ATTRS,
-                "role_mean": {r: role_mean[r] for r in range(4)}, "W": W, "natl_ft": FT, "value": VALON, "venue": VENON}
+                "role_mean": {r: role_mean[r] for r in range(4)}, "W": W, "natl_ft": FT, "value": VALON,
+                "venue": VENON, "odds": ODDSON}
         torch.save(ckpt, ROOT / "data" / "goalnet.pt")
         print(f"  saved data/goalnet.pt ({nseed} seed{'s' if nseed > 1 else ''})", flush=True)
 
     # ---- score the played WC2026 games ----
-    if VALON or VENON:   # in-script scoring builds a 10-feat ctx; skip for value/venue models (predict_game does it right)
-        print("  (--value/--venue: skipping in-script WC scoring; use predict_game.py for that model)", flush=True)
+    if VALON or VENON or ODDSON:   # in-script scoring builds a 10-feat ctx; skip for appended-feature models
+        print("  (--value/--venue/--odds: skipping in-script WC scoring; use predict_game.py for that model)", flush=True)
         con.close(); return
     natctx = national_context(con)
     name2cid = {r[1]: r[0] for r in con.execute("SELECT club_id,name FROM club")}
