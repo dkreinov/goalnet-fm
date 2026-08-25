@@ -1,5 +1,10 @@
 # goalnet-fm
 
+![Football Manager scouting attributes flowing through a neural network into a real match scoreline](assets/pipeline.jpg)
+
+<sub>Left: ~11M Football Manager attribute values across 192k players. Centre: per-player encoders feeding
+bivariate-Poisson goal rates. Right: a calibrated probability distribution over every scoreline of a real match.</sub>
+
 **Can a video game's scouting database predict real football scorelines?**
 
 Football Manager employs a global network of over a thousand scouts and researchers who rate every professional player on
