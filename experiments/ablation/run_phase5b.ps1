@@ -1,5 +1,5 @@
 # Phase 5 chained: Step 5 ctx-pm-s3 (Arm P1) then Step 3 fallback arch-latecross-s3. Detached, resumable.
-$PY   = 'C:\Users\youruser\AppData\Local\Programs\Python\Python312\python.exe'
+$PY   = "$env:LOCALAPPDATA\Programs\Python\Python312\python.exe"
 $ROOT = 'D:\Programming\claude\FM'
 $LOG  = Join-Path $ROOT 'data\_ablation_phase5b.log'
 Set-Location $ROOT

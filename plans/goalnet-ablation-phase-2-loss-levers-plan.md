@@ -28,7 +28,7 @@ noise-level unless consistent across lanes.
 mechanical; analysis needs care). **Subagents:** NOT allowed; long runs = background Bash.
 
 **Ops (from Phase 1, non-negotiable):**
-- Interpreter: `C:\Users\youruser\AppData\Local\Programs\Python\Python312\python.exe` (bare `python`
+- Interpreter: `%LOCALAPPDATA%\Programs\Python\Python312\python.exe` (bare `python`
   not on Bash PATH). NumPy2/torch import banner is benign noise — filter it, don't chase it.
 - Each 5-seed/150-epoch pooled run ≈ **55–60 min CPU**. Run ONE experiment at a time.
 - **Background jobs get idle-killed.** Keep the session active with monitoring loops

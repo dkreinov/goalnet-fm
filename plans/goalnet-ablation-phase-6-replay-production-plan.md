@@ -116,7 +116,7 @@ cutover); update docs + memory; archive old checkpoints; write the program retro
 
 ## Ops (from handoff)
 
-- Interpreter: `C:\Users\youruser\AppData\Local\Programs\Python\Python312\python.exe` (bare
+- Interpreter: `%LOCALAPPDATA%\Programs\Python\Python312\python.exe` (bare
   `python` not on PATH). NumPy2-vs-torch banner non-fatal. Never index a lazy NpzFile in a loop.
 - Long runs: detached scheduled tasks (see `experiments/ablation/run_phase5*.ps1` templates,
   direct `& $PY 'arg' ...`) + ScheduleWakeup checks. `plans/` gitignored → `git add -f`.

@@ -69,7 +69,7 @@ unchanged from Phase 1. Full adopted-defaults rationale: `experiments/ablation/D
 
 ## Ops notes (unchanged from Phase 1, reconfirmed)
 
-- Interpreter: `C:\Users\youruser\AppData\Local\Programs\Python\Python312\python.exe` (bare python not
+- Interpreter: `%LOCALAPPDATA%\Programs\Python\Python312\python.exe` (bare python not
   on Bash PATH). NumPy2/torch import banner is benign.
 - 4 logical cores, ~4 GB free RAM → **one training run at a time** (concurrency OOMs/thrashes).
 - **Background jobs are idle-killed inside the Claude session.** Reliable pattern used in Phase 2:

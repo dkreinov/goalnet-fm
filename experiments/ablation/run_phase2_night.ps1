@@ -8,7 +8,7 @@
 #   4. combo-beta0-w1-s10    beta0 + W1, pooled 10-seed  (robustness: does the 5-seed estimate hold?)
 
 $ErrorActionPreference = 'Continue'
-$PY   = 'C:\Users\youruser\AppData\Local\Programs\Python\Python312\python.exe'
+$PY   = "$env:LOCALAPPDATA\Programs\Python\Python312\python.exe"
 $ROOT = 'D:\Programming\claude\FM'
 $LOG  = Join-Path $ROOT 'data\_ablation_night.log'
 Set-Location $ROOT

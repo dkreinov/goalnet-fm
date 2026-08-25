@@ -1,5 +1,5 @@
 # Phase 5 Arm X — cross-team attention exploratory (seeds=3). Detached, resumable (per-seed caches).
-$PY   = 'C:\Users\youruser\AppData\Local\Programs\Python\Python312\python.exe'
+$PY   = "$env:LOCALAPPDATA\Programs\Python\Python312\python.exe"
 $ROOT = 'D:\Programming\claude\FM'
 $LOG  = Join-Path $ROOT 'data\_ablation_phase5.log'
 Set-Location $ROOT

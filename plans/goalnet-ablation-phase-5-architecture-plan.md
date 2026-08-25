@@ -45,7 +45,7 @@ block) is small and contract-frozen here. **Recommended thinking budget:** High.
   model factory must not add RNG draws before `tg.GoalNet(...)` construction (train_one seeds RNG
   then immediately builds the net — run_ablation.py:190-195).
 - New npz naming per convention: `build_X.py` → `data/X.npz`.
-- Interpreter: `C:\Users\youruser\AppData\Local\Programs\Python\Python312\python.exe` (bare
+- Interpreter: `%LOCALAPPDATA%\Programs\Python\Python312\python.exe` (bare
   `python` not on PATH). Lazy-NpzFile gotcha: ALWAYS materialize arrays before loops.
 
 ## Steps

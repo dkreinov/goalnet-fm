@@ -35,7 +35,7 @@ Standings as of 2026-06-23 (per-game pts / exacts — winner pick / scorer pick)
 | 4 | RIVAL_6 | 38 | 7 | Argentina | Olise |
 | 5 | RIVAL_7 | 37 | 5 | Spain | Kane |
 | 6 | RIVAL_1 | 35 | 4 | **Spain** | **Mbappé** |
-| 7 | **YOU (you)** | 34 | 3 | **Spain** | **Mbappé** |
+| 7 | **YOU** | 34 | 3 | **Spain** | **Mbappé** |
 | 8 | RIVAL_2 | 33 | 5 | **Spain** | **Mbappé** |
 | 9 | RIVAL_8 | 24 | 2 | Brazil | Endrick |
 

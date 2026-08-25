@@ -1,6 +1,6 @@
 # Experiment: does beta>0 + odds beat calibrated beta0+odds ON COMPETITION POINTS?
 # Trains beta in {0,1,3} + odds at 3-seed (apples-to-apples) to models/exp/. Production data/goalnet.pt untouched.
-$PY   = 'C:\Users\youruser\AppData\Local\Programs\Python\Python312\python.exe'
+$PY   = "$env:LOCALAPPDATA\Programs\Python\Python312\python.exe"
 $ROOT = 'D:\Programming\claude\FM'
 $LOG  = Join-Path $ROOT 'data\_beta_odds_exp.log'
 Set-Location $ROOT

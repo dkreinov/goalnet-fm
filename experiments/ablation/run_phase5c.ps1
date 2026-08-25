@@ -1,5 +1,5 @@
 # Phase 5 Step 6 — Arm P2: plus-minus as per-player channels (A 62->64), goalnet arch, s3.
-$PY   = 'C:\Users\youruser\AppData\Local\Programs\Python\Python312\python.exe'
+$PY   = "$env:LOCALAPPDATA\Programs\Python\Python312\python.exe"
 $ROOT = 'D:\Programming\claude\FM'
 $LOG  = Join-Path $ROOT 'data\_ablation_phase5c.log'
 Set-Location $ROOT

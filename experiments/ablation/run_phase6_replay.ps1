@@ -1,5 +1,5 @@
 # Phase 6 - WC2026 walk-forward replay, all 4 candidates x {frozen,finetune}, seeds=3. Detached.
-$PY   = 'C:\Users\youruser\AppData\Local\Programs\Python\Python312\python.exe'
+$PY   = "$env:LOCALAPPDATA\Programs\Python\Python312\python.exe"
 $ROOT = 'D:\Programming\claude\FM'
 $LOG  = Join-Path $ROOT 'data\_ablation_phase6_replay.log'
 Set-Location $ROOT

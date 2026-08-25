@@ -8,7 +8,7 @@
 #   Start-Process -WindowStyle Hidden powershell -ArgumentList '-ExecutionPolicy','Bypass','-File','D:\Programming\claude\FM\experiments\ablation\run_phase2_remaining.ps1'
 
 $ErrorActionPreference = 'Continue'
-$PY   = 'C:\Users\youruser\AppData\Local\Programs\Python\Python312\python.exe'
+$PY   = "$env:LOCALAPPDATA\Programs\Python\Python312\python.exe"
 $ROOT = 'D:\Programming\claude\FM'
 $LOG  = Join-Path $ROOT 'data\_ablation_phase2.log'
 Set-Location $ROOT

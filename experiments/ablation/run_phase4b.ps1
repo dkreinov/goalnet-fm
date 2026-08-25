@@ -1,5 +1,5 @@
 # Phase 4 remaining runs: B2 anchor sweep + Arm S stage. Sequential, detached, resumable.
-$PY   = 'C:\Users\youruser\AppData\Local\Programs\Python\Python312\python.exe'
+$PY   = "$env:LOCALAPPDATA\Programs\Python\Python312\python.exe"
 $ROOT = 'D:\Programming\claude\FM'
 $LOG  = Join-Path $ROOT 'data\_ablation_phase4b.log'
 Set-Location $ROOT

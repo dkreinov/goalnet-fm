@@ -7,7 +7,7 @@ downstream heads. Gates are distributional; 3/1 fantasy points is a reference co
 
 ## Environment facts (verified 2026-07-21)
 
-- Interpreter: `C:\Users\youruser\AppData\Local\Programs\Python\Python312\python.exe`
+- Interpreter: `%LOCALAPPDATA%\Programs\Python\Python312\python.exe`
   (bare `python` is NOT on the Bash-tool PATH — always use the full path in commands/logs).
 - Dataset `data/players_imp.npz`: 69,053 matches, (11,62) per side + roles + imputed masks Ih/Ia,
   dates 2020-01-01 → 2026-06-14. Context `data/context.npz`: (90279, 10).

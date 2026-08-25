@@ -1,5 +1,5 @@
 # Phase 4 Arm A — odds as ctx feature. Detached, resumable (per-seed caches). Direct call (no array).
-$PY   = 'C:\Users\youruser\AppData\Local\Programs\Python\Python312\python.exe'
+$PY   = "$env:LOCALAPPDATA\Programs\Python\Python312\python.exe"
 $ROOT = 'D:\Programming\claude\FM'
 $LOG  = Join-Path $ROOT 'data\_ablation_phase4.log'
 Set-Location $ROOT

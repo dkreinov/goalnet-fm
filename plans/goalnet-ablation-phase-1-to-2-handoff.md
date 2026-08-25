@@ -92,7 +92,7 @@ metrics. Concrete leads from Phase 1:
 
 ## Environment / operational notes for the next session
 
-- Interpreter (bare `python` NOT on Bash PATH): `C:\Users\youruser\AppData\Local\Programs\Python\Python312\python.exe`.
+- Interpreter (bare `python` NOT on Bash PATH): `%LOCALAPPDATA%\Programs\Python\Python312\python.exe`.
 - NumPy2-vs-torch warning banner at import is pre-existing, non-fatal (prints an import-stack that
   looks like a traceback — ignore).
 - **Background jobs are idle-killed here.** A 5-seed/150-epoch run is ~1h CPU. Options: keep the session

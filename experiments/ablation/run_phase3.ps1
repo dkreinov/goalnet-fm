@@ -1,7 +1,7 @@
 # Phase 3 ablation — detached, resumable. Uses the ADOPTED Phase-2 config (--beta 0 --w 1) so the
 # momentum feature effect is not confounded. Single direct call (no array loop — PowerShell flattens
 # single-element nested arrays). Resumable via per-seed caches.
-$PY   = 'C:\Users\youruser\AppData\Local\Programs\Python\Python312\python.exe'
+$PY   = "$env:LOCALAPPDATA\Programs\Python\Python312\python.exe"
 $ROOT = 'D:\Programming\claude\FM'
 $LOG  = Join-Path $ROOT 'data\_ablation_phase3.log'
 Set-Location $ROOT

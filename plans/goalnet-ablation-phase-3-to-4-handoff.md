@@ -66,7 +66,7 @@ Phase 4 is currently a skeleton in the phase-state — PLAN IT FIRST before exec
 
 ## Ops notes (unchanged, reconfirmed)
 
-- Interpreter `C:\Users\youruser\AppData\Local\Programs\Python\Python312\python.exe`; NumPy2/torch
+- Interpreter `%LOCALAPPDATA%\Programs\Python\Python312\python.exe`; NumPy2/torch
   banner benign; 4 cores / ~4GB free → one run at a time.
 - **Detached Windows scheduled task** (`experiments/ablation/run_phase3.ps1` template) is the reliable
   way to run unattended (session bg jobs idle-killed); per-seed caches resume; hourly `ScheduleWakeup`

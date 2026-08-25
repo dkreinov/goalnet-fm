@@ -1,5 +1,5 @@
 # Multi-tournament leakage-free backtest: FM+odds vs odds-only, train<2024-06, eval Euro24+Copa24+NL24-25.
-$PY   = 'C:\Users\youruser\AppData\Local\Programs\Python\Python312\python.exe'
+$PY   = "$env:LOCALAPPDATA\Programs\Python\Python312\python.exe"
 $ROOT = 'D:\Programming\claude\FM'
 $LOG  = Join-Path $ROOT 'data\_backtest_tournaments.log'
 Set-Location $ROOT

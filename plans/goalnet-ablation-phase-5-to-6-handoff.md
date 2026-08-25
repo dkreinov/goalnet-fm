@@ -83,7 +83,7 @@ Goal: walk-forward WC2026 day-by-day replay (only-past-info context, real lineup
 
 ## Ops facts a fresh session needs
 
-- Interpreter: `C:\Users\youruser\AppData\Local\Programs\Python\Python312\python.exe` (bare
+- Interpreter: `%LOCALAPPDATA%\Programs\Python\Python312\python.exe` (bare
   `python` NOT on PATH). NumPy-2-vs-torch import banner is pre-existing and non-fatal.
 - Long runs: detached Windows scheduled tasks (Register/Start/Unregister-ScheduledTask, see
   `experiments/ablation/run_phase5*.ps1` templates — direct `& $PY 'arg' ...` calls, never

@@ -1,5 +1,5 @@
 # Experiment: how much do FM player grades add over odds? Train ctx+odds ONLY (players zeroed), beta0, 3-seed.
-$PY   = 'C:\Users\youruser\AppData\Local\Programs\Python\Python312\python.exe'
+$PY   = "$env:LOCALAPPDATA\Programs\Python\Python312\python.exe"
 $ROOT = 'D:\Programming\claude\FM'
 $LOG  = Join-Path $ROOT 'data\_oddsonly_exp.log'
 Set-Location $ROOT
