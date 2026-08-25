@@ -39,3 +39,6 @@ data/fifa/
 
 # runtime state written by the bots
 hevre_health.json
+
+# Claude Code runtime lock
+.claude/scheduled_tasks.lock
