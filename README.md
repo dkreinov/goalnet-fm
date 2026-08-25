@@ -1,107 +1,199 @@
-# FM Ratings → EPL Match Prediction (POC)
+# goalnet-fm
 
-Football Manager player attribute ratings (scraped from unofficial sources, versioned by date) +
-real EPL match data (results, lineups, stats, odds, xG) for seasons **2023-24, 2024-25, 2025-26**,
-stored in SQLite, with a baseline training pipeline that predicts H/D/A from the two lineups' ratings.
+**Can a video game's scouting database predict real football scorelines?**
 
-Companion docs: `PLAN.md` (architecture + status log), `LITERATURE.md` (prior work + design implications).
+Football Manager employs a global network of over a thousand scouts and researchers who rate every professional player on
+60+ attributes, 1–20, from *Finishing* and *Positioning* down to hidden traits like *Consistency*
+and *Big Match Temperament*. It is, plausibly, the most detailed public model of football talent in
+existence. This repo asks whether it can predict the **exact scoreline** of a real match — and then
+spends six phases of controlled experiments finding out.
 
-## Data
+The short answer is the interesting part:
 
-DB: `D:\Programming\claude\FM\data\fm.db` (SQLite, schema in `schema.sql`).
+> **Yes — right up until you show the model the betting odds. After that, the Football Manager
+> ratings add approximately nothing.**
+>
+> Confirmed on 104 World Cup 2026 games, then replicated on 214 held-out games across Euro 2024,
+> Copa América 2024 and the Nations League. A model with the player ratings *deleted* scored as
+> well or better on every one of those tournaments.
 
-| Table | Content |
+A project that disproves a good chunk of its own premise, and says so, is more useful than one that
+quietly buries the null result. The evidence trail is in
+[`experiments/ablation/DESIGN.md`](experiments/ablation/DESIGN.md) and
+[`RESULTS_WC2026.md`](RESULTS_WC2026.md).
+
+---
+
+## What actually got built
+
+A calibrated scoreline model — **GoalNet** — that outputs a full probability distribution over every
+scoreline (0–0 through 9–9), not just win/draw/loss.
+
+| | Score information¹ | RPS² | Exact hits (of 104) |
+|---|---|---|---|
+| Empirical-prior null (always pick the modal score) | 0.000 | — | 12 |
+| Production v1 (points-chasing loss) | +0.130 | 0.157 | 14 |
+| **Production v2 (calibrated + market)** | **+0.351** | **0.147** | 13 |
+
+¹ nats of information over an empirical-prior null — how much the model knows beyond "1–0 is common".
+² Ranked Probability Score, the standard football-forecasting metric; lower is better.
+
+v2 **more than doubled** the information content of the shipped model. Two changes did all the work,
+and neither of them was a fancier architecture.
+
+---
+
+## The three findings worth your time
+
+**1. Deleting the "win more points" term from the loss was the single biggest gain.**
+The original model was trained with a reward term for maximising fantasy points (exact score = 3,
+right outcome = 1). It felt obviously correct. It was a bias: pure Poisson likelihood is a *proper
+scoring rule*, minimised exactly when the model tells the truth. Bolting a payoff onto it drags the
+model away from the truth. Removing it was worth **+0.15 information, for free**.
+
+**2. Only genuinely new information ever moved the needle.**
+Six phases of ideas that re-derived signal already present in the data came back null — Elo momentum
+and form trajectory, cross-team attention (both early and late fusion), plus-minus player ratings,
+in-tournament fine-tuning. The one lever that worked was **de-vigged bookmaker odds**: information
+the dataset genuinely did not already contain.
+
+**3. In-tournament fine-tuning fails, and it fails for a teachable reason.**
+Updating the model on World Cup results as they arrived *destroyed* it — catastrophic forgetting of
+69,000 matches of pretraining by roughly 100 new ones. Adding **L2-SP** (an L2 penalty toward the
+pretrained weights; a small-model alternative to LoRA) fixed the forgetting and *still* lost to
+simply leaving the model frozen. Sometimes the honest result is that a clever idea has nowhere to
+get information from.
+
+---
+
+## What this project touches
+
+Half the fun was that the problem refused to stay inside one discipline.
+
+| Domain | What it meant here |
 |---|---|
-| `match` | 1,140 EPL matches: score, HT score, referee, shots/cards/corners, Bet365+avg odds, understat xG |
-| `match_player` | 45,557 appearance rows from ESPN (starter flag, position, sub status) |
-| `player` / `player_source_id` | canonical players + per-source IDs (in-game UID where available) |
-| `player_snapshot` | dated rating snapshots per (player, source, fm_version); new row only when values change (`attrs_hash` dedupe) |
-| `player_attribute` | EAV: technical / mental / physical / set_pieces / goalkeeping / hidden, raw 1-20 scale |
-| `fm_version`, `season`, `club`, `club_alias`, `source`, `scrape_log` | dimensions + audit |
+| **Data engineering** | 90,279 matches across 54 competitions; 192k players, 11M attribute values, 3.4M appearance rows in SQLite |
+| **Entity resolution** | Clubs are `Ath Madrid` in one source and `Atlético de Madrid` in another; players share no IDs across sources. Matching runs on (competition, date ±2d, exact score) with name-similarity tie-breaks — never on names alone |
+| **Reverse engineering** | OddsPortal serves odds through an encrypted AJAX endpoint. Recovering it meant pulling the client bundle, finding the PBKDF2 → AES-CBC → gzip chain, and reimplementing it in ~40 lines |
+| **Applied statistics** | Shin's method for removing bookmaker margin; Dixon–Coles low-score correction; proper scoring rules; calibration (ECE, reliability curves) |
+| **Deep learning** | Per-player attribute encoders → team representation → bivariate Poisson goal rates. PyTorch, CPU-only, ~150k parameters |
+| **Experimental design** | A 35-run append-only registry, a frozen metric suite, pre-registered gates, and walk-forward leakage control |
+| **Decision theory** | The model emits probabilities; separate *heads* turn them into bets under whatever scoring table a competition uses — including a Monte-Carlo bracket simulator for "who wins the cup" |
+| **Market efficiency** | An accidental empirical lesson in why beating a liquid betting market with public data is hard |
 
-Rating sources and snapshot dates:
+---
 
-| Source | FM version | Snapshot date | Players | Notes |
-|---|---|---|---|---|
-| futek.io | pre-summer-2023 export ("FM24"-branded, actually FM23-era) | 2023-06-01 | ~1,860 | raw 0-200 CA/PA, 13 hidden attrs |
-| fminside db4 | FM24 24.1.0 | 2023-11-06 | partial | original release DB |
-| fminside db5 | FM24 24.3.0 | 2024-02-26 | ~1,900 | winter-update DB (in-season change point) |
-| fminside db6 | FMU25 community 24.4 | 2024-10-01 | 1,516 | SI cancelled FM25; community update covers 2024-25 |
-| fminside db7 | FM26 26.2.0 | 2026-03-01 | 1,653 | 2025-26 |
+## The methodology (the part I would actually defend)
 
-"Score changed → saved by date" = consecutive snapshots of the same player differ only when the
-attribute hash changes; `snapshot_date` orders them.
+Every claim above had to survive a deliberately hostile process:
 
-## Pipeline (run order)
+- **A frozen metric suite.** Metric definitions were fixed *before* the experiments and never
+  renegotiated — no moving goalposts when a favourite idea underperformed.
+- **An append-only registry.** All 35 runs live in
+  [`experiments/ablation/registry.jsonl`](experiments/ablation/registry.jsonl), including the
+  embarrassing ones. Reports regenerate from it and are never hand-edited.
+- **Pre-registered adopt/reject gates,** written down before results were seen.
+- **Leakage taken seriously.** The World Cup 2026 slate was the *only* clean holdout — every earlier
+  tournament sits inside the training window, so validating on those required retraining behind a
+  time cutoff. The walk-forward replay rebuilds context matchday by matchday, and its correctness is
+  checked by a tripwire that must reproduce the static evaluation exactly.
+- **Null results published.** Phases 3 and 5 produced nothing shippable. They are documented at the
+  same length as the wins, because knowing where the ceiling is has a cost and that cost was paid.
+
+---
+
+## Reproducing it
+
+**Requirements:** Python 3.12, PyTorch (CPU is fine), NumPy, BeautifulSoup, `cryptography`. No GPU.
+
+The database and trained checkpoints are **not** in this repo — the DB is large and holds scraped
+third-party data, and the weights are regenerable. The scrapers rebuild both from public sources,
+throttled and disk-cached, so re-runs are free and resumable.
+
+```bash
+# 1. Build the match / player database (long; throttled and resumable)
+python src/load_matches.py            # results, odds columns, xG
+python src/scrape_fminside.py         # Football Manager attribute snapshots
+python src/load_lineups_espn.py       # starting XIs
+
+# 2. Build model inputs
+python src/build_player_dataset_imp.py --max-imp 1   # -> data/players_imp.npz
+python src/build_context.py                          # -> data/context.npz   (Elo, form, rest days)
+python src/scrape_oddsportal.py                      # -> data/oddsportal_raw.csv
+python src/build_odds_feat.py                        # -> data/ctx_odds.npz  (Shin de-vigged)
+
+# 3. Train the production model (beta=0, W=1, market feature, 5-seed ensemble)
+python src/train_goals.py --full --odds --ensemble 5
+
+# 4. Predict a fixture
+python src/predict_game.py NED-SWE
+```
+
+Re-running the experiments:
+
+```bash
+python experiments/ablation/run_ablation.py --name my-run --beta 0 --w 1 --seeds 5
+python experiments/ablation/run_ablation.py --report        # regenerate the results table
+python experiments/ablation/replay_wc.py --seeds 3          # walk-forward tournament replay
+python experiments/ablation/backtest_tournaments.py         # leakage-free multi-tournament backtest
+python experiments/ablation/tripwire_v2.py data/goalnet.pt  # score any checkpoint on the WC slate
+```
+
+Running the bots (they auto-fill picks in fantasy leagues I play in). Credentials are never stored
+in the repo — export your own session values first:
+
+```bash
+export FANTASY_ANON_KEY="<the app's public anon key, from your own browser session>"
+export FANTASY_BASE_URL="<the app's API base URL>"
+python auto_bet.py
+```
+
+---
+
+## Repo map
 
 ```
-python src/load_matches.py        # football-data.co.uk results+odds (3 CSVs)
-python src/load_lineups_espn.py   # ESPN hidden API lineups (resumable, disk-cached)
-python src/load_xg_understat.py   # understat xG (3 requests)
-python src/scrape_fminside.py 5 7 6 4   # FM attributes per db version (resumable)
-python src/scrape_futek.py        # futek FM24-branded export (adaptive 50-cap slicing)
-python src/gap_fill_futek.py      # by-name search for starters missed by division enumeration
-python src/build_dataset.py       # join lineups->snapshots, aggregate, Elo+form -> data/dataset.parquet
-python src/train.py [--with-odds] # baselines + GBDT + MLP, time-split eval
+src/                        96 scripts: scrapers, dataset builders, training, inference
+  train_goals.py            the production model and training loop
+  predict_game.py           inference + pick strategies (chalk / exacts / contrarian / gamble)
+  scrape_oddsportal.py      the reverse-engineered encrypted odds endpoint
+  build_odds_feat.py        Shin de-vigging -> model features
+experiments/ablation/       the experiment harness
+  DESIGN.md                 frozen contracts and every phase verdict   <- start here
+  registry.jsonl            all 35 runs, append-only
+  replay_wc.py              walk-forward tournament replay
+  backtest_tournaments.py   leakage-free multi-tournament backtest
+RESULTS_WC2026.md           the narrative results log
+LITERATURE.md               prior work and what it implied for the design
+FUTURE_WORK.md              what comes next, and why
 ```
 
-All scrapers: polite rate limits (1-2.5 s/req), disk cache (`data/cache/`), resume-safe, errors to `scrape_log`.
-SQLite is opened in autocommit (multiple collector processes write concurrently).
+---
 
-## Joining lineups to FM players
+## What I would do next
 
-`build_dataset.resolve()`: exact normalized name → initial+lastname (both orders, handles
-"Son Heung-Min"/"Heung-Min Son") → unique-token (handles "Alisson") — each step disambiguated by club
-when several candidates share a key. Coverage ≈ 93% of starter appearances (rising with db5/db4 completion).
-A low-CA audit caught wrong-identity matches from name-search gap-fill (e.g. amateur namesakes) — deleted.
+The finding that odds dominate reframes where effort belongs; it does not end the project.
 
-## Results (final POC run, test = 300 matches of 2025-26, time split, no leakage)
+- **Where odds do not exist** — lower divisions, minor internationals, fixtures before the market
+  opens — the FM ratings are the only signal available. That is where they earn their keep, and
+  54% of the database has no odds at all.
+- **Per-player prediction** (goals, assists, fantasy points) is the frontier a betting market does
+  not price game by game. It needs per-player event data the database does not yet hold.
+- **A pre-kickoff prediction log** is the real fix for the evaluation problem: log every prediction
+  before kickoff, grade it after, and a permanently leakage-free benchmark accumulates itself, with
+  no cutoff retraining required.
 
-At 1,041 complete matches (≥8/11 starters matched per side), all 5 FM versions loaded, no-odds features:
+---
 
-| Model | Acc | Log-loss | RPS |
-|---|---|---|---|
-| Majority/prior | 43.0% | 1.076 | .2315 |
-| Bookmaker (B365 implied) | 49.3% | 1.014 | .2097 |
-| Elo + form logistic | 52.3% | 1.028 | .2109 |
-| GBDT (all features) | 47.3% | 1.071 | .2230 |
-| **MLP 64-32 (ratings+context)** | **50.0%** | 1.057 | .2180 |
+## Notes and caveats
 
-Matches the literature (50-56% honest ceiling; bookmaker ≈ strongest probability calibration).
-With only ~740 training matches the ratings models roughly tie Elo — more data needed to separate
-them; the FM-attribute signal is there (MLP > GBDT > prior at this scale).
+- **Odds come from a single aggregator** (a ~7-bookmaker consensus average, Shin de-vigged), so
+  there is no cross-provider redundancy.
+- **Sample sizes are small where it counts.** One tournament is ~104 games; differences of a few
+  points or a handful of exact scores are noise, and are labelled as such throughout.
+- **Scraped data is not redistributed here.** The scrapers are throttled and cached; please be
+  considerate of the sources if you run them.
+- **Nothing here is betting advice.** The most robust finding in the entire repo is that the market
+  is very hard to beat.
 
-## Phase 2 model — per-player attention + Poisson (`src/train_nn.py`)
-
-The aggregated tabular models above throw away per-player structure. Phase 2 keeps it:
-
-- Each starter → 98-dim vector: 47 FM attributes (1-20 scale, `/20`) + 47-dim presence mask
-  (so goalkeeper-vs-outfield is distinguishable from a genuine low rating) + 4-dim position one-hot.
-- A shared MLP encodes each player; **masked attention pooling** (plus mean pooling) collapses the
-  ≤11 starters into a team embedding — permutation-invariant, handles variable lineup sizes.
-- `[home_emb, away_emb, home−away, context]` → MLP → **two Poisson goal rates** (λ_home, λ_away).
-  H/D/A probabilities come from the Poisson score matrix (independent-Poisson approximation, 0-10 goals).
-- Trained with Poisson NLL, early-stopped on a held-out slice of the training seasons.
-
-Result (same 300-match 2025-26 test, time split):
-
-| Model | Acc | Log-loss | RPS |
-|---|---|---|---|
-| Majority/prior | 43.0% | 1.074 | .2314 |
-| Bookmaker (B365 implied) | 49.3% | 1.014 | .2097 |
-| **PlayerAttn + Poisson (NN)** | **47.0%** | 1.025 | .2141 |
-
-Goal-rate calibration is excellent: predicted mean λ_home=1.52 / λ_away=1.34 vs actual 1.53 / 1.27.
-The NN beats the prior clearly and approaches the bookmaker on RPS/log-loss with only ~740 training
-matches — exactly the data-starved regime the literature warns about. Trained weights: `data/model_nn.pt`.
-
-## Next steps
-
-1. **More data is the lever** (literature is unanimic that ~740 matches is too few): add leagues
-   (the fminside league filter generalizes — Championship, La Liga, Bundesliga, Serie A, Ligue 1),
-   and back-seasons via the Kaggle FM17/FM20-23 dumps (`PLAN.md` §2). Target 5k-10k matches.
-2. Bivariate-Poisson / Dixon-Coles low-score correction (models the draw inflation the independent
-   approximation misses); compare an ordinal-logit head.
-3. Richer player features: sub minutes weighting, congestion, FM hidden attributes (futek-only — needs
-   a futek scrape for the FM26 era), finer-grained snapshot dates via Wayback captures of fminside.
-4. Blend with the market: stack NN + Elo + odds; evaluate calibration (reliability curves) not just RPS.
+Built by [@dkreinov](https://github.com/dkreinov) · MIT licensed
