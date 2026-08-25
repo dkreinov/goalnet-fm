@@ -25,10 +25,12 @@ NOTIFY = os.path.join(FM, "wc_notify.json")     # {"hc_url":..,"ntfy_url":..,"wi
 HEALTH = os.path.join(FM, "wc_bet_health.json") # {"status":"ok|fail","since":ts,"last_notify":ts}
 RENOTIFY_SEC = 2 * 3600                          # re-alert at most every 2h while still down
 PY = sys.executable
-ANON = ("***REMOVED***"
-        "***REMOVED***"
-        "***REMOVED***")
-BASE = "***REMOVED***"
+# Credentials for the (third-party) fantasy app live in the environment, never in the repo:
+#   FANTASY_ANON_KEY  - the app's public/anon API key, copied from your own browser session
+#   FANTASY_BASE_URL  - the app's API base URL
+# Without them this module still imports; only the submit path is disabled. See README ("Running the bots").
+ANON = os.environ.get("FANTASY_ANON_KEY", "")
+BASE = os.environ.get("FANTASY_BASE_URL", "")
 WINDOW = 80   # start considering a game this many minutes before kickoff
 LOCK = 10     # stop writing this many minutes before KO. Lock-test (2026-06-23, POR-UZB @48m) proved the
               # app does NOT enforce a 60-min lock — writes are accepted ~to kickoff. Lowered 60->10 so the
