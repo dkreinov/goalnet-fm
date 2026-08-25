@@ -1,0 +1,30 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1160" height="230" viewBox="0 0 1160 230" role="img">
+<text x="0" y="30" font-family="ui-sans-serif,-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif" font-size="13" font-weight="600" fill="#f0f6fc">From video-game scouting data to a calibrated scoreline</text>
+<rect x="0" y="58" width="248" height="118" rx="6" fill="none" stroke="#3d444d" stroke-width="1"/>
+<text x="18" y="84" font-family="ui-monospace,SFMono-Regular,'SF Mono',Menlo,Consolas,monospace" font-size="10" letter-spacing="1.1" fill="#9198a1">SOURCES</text>
+<text x="18" y="110" font-family="ui-sans-serif,-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif" font-size="13" font-weight="500" fill="#f0f6fc">Football Manager ratings</text>
+<text x="18" y="132" font-family="ui-sans-serif,-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif" font-size="13" font-weight="400" fill="#9198a1">match results + lineups</text>
+<text x="18" y="154" font-family="ui-sans-serif,-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif" font-size="13" font-weight="400" fill="#9198a1">bookmaker odds</text>
+<line x1="264" y1="117.0" x2="284" y2="117.0" stroke="#3d444d" stroke-width="1"/>
+<path d="M284 117.0 l-6 -4 v8 z" fill="#3d444d"/>
+<rect x="304" y="58" width="248" height="118" rx="6" fill="none" stroke="#3d444d" stroke-width="1"/>
+<text x="322" y="84" font-family="ui-monospace,SFMono-Regular,'SF Mono',Menlo,Consolas,monospace" font-size="10" letter-spacing="1.1" fill="#9198a1">DATASET</text>
+<text x="322" y="110" font-family="ui-sans-serif,-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif" font-size="13" font-weight="500" fill="#f0f6fc">90,279 matches</text>
+<text x="322" y="132" font-family="ui-sans-serif,-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif" font-size="13" font-weight="400" fill="#9198a1">192k players</text>
+<text x="322" y="154" font-family="ui-sans-serif,-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif" font-size="13" font-weight="400" fill="#9198a1">11M attribute values</text>
+<line x1="568" y1="117.0" x2="588" y2="117.0" stroke="#3d444d" stroke-width="1"/>
+<path d="M588 117.0 l-6 -4 v8 z" fill="#3d444d"/>
+<rect x="608" y="58" width="248" height="118" rx="6" fill="none" stroke="#3d444d" stroke-width="1"/>
+<text x="626" y="84" font-family="ui-monospace,SFMono-Regular,'SF Mono',Menlo,Consolas,monospace" font-size="10" letter-spacing="1.1" fill="#9198a1">MODEL</text>
+<text x="626" y="110" font-family="ui-sans-serif,-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif" font-size="13" font-weight="500" fill="#f0f6fc">per-player encoders</text>
+<text x="626" y="132" font-family="ui-sans-serif,-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif" font-size="13" font-weight="400" fill="#9198a1">bivariate Poisson</text>
+<text x="626" y="154" font-family="ui-sans-serif,-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif" font-size="13" font-weight="400" fill="#9198a1">Dixon–Coles correction</text>
+<line x1="872" y1="117.0" x2="892" y2="117.0" stroke="#3d444d" stroke-width="1"/>
+<path d="M892 117.0 l-6 -4 v8 z" fill="#3d444d"/>
+<rect x="912" y="58" width="248" height="118" rx="6" fill="none" stroke="#3d444d" stroke-width="1"/>
+<text x="930" y="84" font-family="ui-monospace,SFMono-Regular,'SF Mono',Menlo,Consolas,monospace" font-size="10" letter-spacing="1.1" fill="#9198a1">OUTPUT</text>
+<text x="930" y="110" font-family="ui-sans-serif,-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif" font-size="13" font-weight="500" fill="#f0f6fc">P(home, away)</text>
+<text x="930" y="132" font-family="ui-sans-serif,-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif" font-size="13" font-weight="400" fill="#9198a1">100 scorelines</text>
+<text x="930" y="154" font-family="ui-sans-serif,-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif" font-size="13" font-weight="400" fill="#9198a1">calibrated</text>
+<text x="0" y="210" font-family="ui-sans-serif,-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif" font-size="12" fill="#9198a1">The model outputs a full distribution, not a single guess — downstream heads turn it into a pick.</text>
+</svg>
