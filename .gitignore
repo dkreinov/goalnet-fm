@@ -42,3 +42,6 @@ hevre_health.json
 
 # Claude Code runtime lock
 .claude/scheduled_tasks.lock
+
+# banner candidates (local staging, not published)
+assets/options/
