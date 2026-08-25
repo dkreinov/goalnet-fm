@@ -36,3 +36,6 @@ hevre_auth.json
 hevre_bot.log
 hevre_state.json
 data/fifa/
+
+# runtime state written by the bots
+hevre_health.json
